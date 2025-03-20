@@ -1,0 +1,33 @@
+﻿<Application x:Class="SDBEditor.App"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:local="clr-namespace:SDBEditor"
+             StartupUri="MainWindow.xaml">
+    <Application.Resources>
+        <!-- Hardware acceleration and performance options -->
+        <RenderOptions x:Key="HardwareAccelerationOptions"
+                       BitmapScalingMode="HighQuality"
+                       EdgeMode="Aliased"
+                       ClearTypeHint="Enabled" />
+
+        <!-- Added text rendering improvements for Unicode -->
+        <Style TargetType="{x:Type TextBlock}">
+            <Setter Property="TextOptions.TextFormattingMode" Value="Ideal" />
+            <Setter Property="TextOptions.TextRenderingMode" Value="ClearType" />
+            <Setter Property="TextOptions.TextHintingMode" Value="Auto" />
+        </Style>
+
+        <Style TargetType="{x:Type TextBox}">
+            <Setter Property="TextOptions.TextFormattingMode" Value="Ideal" />
+            <Setter Property="TextOptions.TextRenderingMode" Value="ClearType" />
+            <Setter Property="TextOptions.TextHintingMode" Value="Auto" />
+        </Style>
+
+        <!-- Configure VirtualizingStackPanel defaults for better performance -->
+        <Style TargetType="{x:Type VirtualizingStackPanel}">
+            <Setter Property="IsVirtualizing" Value="True"/>
+            <Setter Property="VirtualizationMode" Value="Recycling"/>
+            <Setter Property="ScrollViewer.CanContentScroll" Value="True"/>
+        </Style>
+    </Application.Resources>
+</Application>

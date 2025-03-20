@@ -1,0 +1,38 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net8.0-windows10.0.26100.0</TargetFramework>
+    <UseWPF>true</UseWPF>
+    <UseWindowsForms>true</UseWindowsForms>
+    <!-- Change this to disable nullable reference types -->
+    <Nullable>annotations</Nullable>
+    <!-- This option makes it easier to work with possible null references -->
+    <LangVersion>10.0</LangVersion>
+    <ApplicationIcon>sbd 2.ico</ApplicationIcon>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <None Remove="Resources\sbd logo.png" />
+    <None Remove="Resources\SDB.png" />
+    <None Remove="Resources\WWE_2K_Logo.png" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Content Include="sbd 2.ico" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="EPPlus" Version="7.6.1" />
+    <PackageReference Include="Ookii.Dialogs.Wpf" Version="5.0.1" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Resource Include="Resources\sbd logo.png">
+      <CopyToOutputDirectory>Never</CopyToOutputDirectory>
+    </Resource>
+    <Resource Include="Resources\WWE_2K_Logo.png">
+      <CopyToOutputDirectory>Never</CopyToOutputDirectory>
+    </Resource>
+  </ItemGroup>
+</Project>
