@@ -23,6 +23,11 @@ using SDBEditor.Views;
 using System.Net;
 using System.Threading.Tasks;
 using System.Threading;
+using static SDBEditor.Views.RollbackDialog.NewSdbDialog;
+using static SDBEditor.Views.RollbackDialog.NewSdbDialog.EnhancedMergeSdbDialog;
+using SharelistEntry = SDBEditor.Handlers.SharelistEntry;
+using SDBEditor.Handlers;
+using static SDBEditor.Views.RollbackDialog;
 
 namespace SDBEditor
 {
@@ -62,6 +67,10 @@ namespace SDBEditor
         {
             InitializeComponent();
 
+            // ✅ Initialize your SDB label mapping BEFORE anything UI binds to it
+            string jsonPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "metadata", "CharProfileTable.json");
+            SdbFunctionEntryMapper.Initialize(jsonPath);
+
             // Configure UI for better Unicode display
             ConfigureUnicodeSupport();
 
@@ -70,10 +79,14 @@ namespace SDBEditor
             _metadataHandler = new MetadataHandler();
             _backupHandler = new BackupHandler();
 
+            // ADD THIS: Setup automatic language detection updates
+            SetupLanguageUpdateHandling();
+
             // Initialize observable collection for DataGrid
             _stringsCollection = new ObservableCollection<StringEntryViewModel>();
             StringsDataGrid.ItemsSource = _stringsCollection;
 
+            InitializeSharelist();
             // Initialize flag for scrollbar dragging
             _isDraggingScrollbar = false;
 
@@ -138,6 +151,136 @@ namespace SDBEditor
             }
         }
 
+
+        /// <summary>
+        /// Fixes "Unknown Language" by detecting from filename
+        /// Add this method to your MainWindow class
+        /// </summary>
+        private void FixUnknownLanguage()
+        {
+            if (_sdbHandler != null && _sdbHandler.Language == "Unknown Language" && !string.IsNullOrEmpty(_currentFile))
+            {
+                // Get filename without extension
+                string filename = Path.GetFileNameWithoutExtension(_currentFile).ToUpper();
+
+                Console.WriteLine($"[FixUnknownLanguage] Checking filename: '{filename}'");
+
+                // List of supported languages
+                string[] languages = { "ENG", "FRA", "GER", "ITA", "SPA", "ARA", "JPN", "KOR", "CHN", "RUS", "POR", "DUT" };
+
+                // Check for exact match first
+                if (languages.Contains(filename))
+                {
+                    _sdbHandler.Language = filename;
+                    UpdateLanguageUI(filename);
+                    Console.WriteLine($"[FixUnknownLanguage] Exact match found: {filename}");
+                    return;
+                }
+
+                // Check if filename contains language code
+                foreach (string lang in languages)
+                {
+                    if (filename.Contains(lang))
+                    {
+                        _sdbHandler.Language = lang;
+                        UpdateLanguageUI(lang);
+                        Console.WriteLine($"[FixUnknownLanguage] Language found in filename: {lang}");
+                        return;
+                    }
+                }
+
+                Console.WriteLine("[FixUnknownLanguage] No language found in filename");
+            }
+        }
+
+        /// <summary>
+        /// Updates the UI with the detected language
+        /// </summary>
+        private void UpdateLanguageUI(string language)
+        {
+            // Update the game info text
+            if (GameExtraInfoText != null)
+            {
+                GameExtraInfoText.Text = $", Language: {language}";
+            }
+
+            // Update window title
+            if (_sdbHandler.GameName != "Unknown Game")
+            {
+                this.Title = $"SDB Editor - {_sdbHandler.GameName} - {language}";
+            }
+
+            // Update status
+            UpdateStatus($"Language detected: {language}");
+
+            // Force UI refresh
+            this.UpdateLayout();
+        }
+
+        private void CopyMultipleHashMenuItem_Click(object sender, RoutedEventArgs e)
+        {
+            try
+            {
+                if (StringsDataGrid?.SelectedItems != null && StringsDataGrid.SelectedItems.Count > 0)
+                {
+                    // Collect all selected hash IDs
+                    var hashIds = new List<string>();
+
+                    foreach (var item in StringsDataGrid.SelectedItems)
+                    {
+                        if (item is StringEntryViewModel selectedItem)
+                        {
+                            hashIds.Add(selectedItem.HashId.ToString());
+                        }
+                    }
+
+                    if (hashIds.Count > 0)
+                    {
+                        // Join with commas
+                        string hashIdList = string.Join(", ", hashIds);
+
+                        bool success = ClipboardManager.SafeCopy(hashIdList);
+
+                        if (success)
+                        {
+                            UpdateStatus($"Copied {hashIds.Count} hash IDs to clipboard");
+
+                            // Optional: Show the first few IDs in the status
+                            if (hashIds.Count <= 3)
+                            {
+                                UpdateStatus($"Copied hash IDs: {hashIdList}");
+                            }
+                            else
+                            {
+                                UpdateStatus($"Copied {hashIds.Count} hash IDs: {string.Join(", ", hashIds.Take(3))}...");
+                            }
+                        }
+                        else
+                        {
+                            // Retry with a small delay
+                            Dispatcher.BeginInvoke(new Action(async () =>
+                            {
+                                await Task.Delay(100);
+                                bool retrySuccess = await ClipboardManager.SafeCopyAsync(hashIdList);
+                                UpdateStatus(retrySuccess
+                                    ? $"Copied {hashIds.Count} hash IDs to clipboard"
+                                    : "Failed to copy hash IDs - clipboard may be in use");
+                            }));
+                        }
+                    }
+                }
+                else
+                {
+                    UpdateStatus("No items selected to copy hash IDs");
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Error in copy multiple hash IDs operation: {ex.Message}");
+                UpdateStatus("Error during copy operation");
+            }
+        }
+
         #region File Drag & Drop Functionality
 
         /// <summary>
@@ -197,7 +340,7 @@ namespace SDBEditor
         private bool IsValidDropFile(string filePath)
         {
             string extension = Path.GetExtension(filePath).ToLower();
-            return extension == ".sdb" || extension == ".csv" || extension == ".xlsx" || extension == ".xls";
+            return extension == ".sdb" || extension == ".csv" || extension == ".xlsx" || extension == ".xls" || extension == ".sharesdb";
         }
 
         /// <summary>
@@ -214,6 +357,8 @@ namespace SDBEditor
                 case ".xlsx":
                 case ".xls":
                     return "Excel Import Options";
+                case ".sharesdb":
+                    return "Sharelist File Detected";
                 default:
                     return "File Drop Detected";
             }
@@ -232,6 +377,8 @@ namespace SDBEditor
                 case ".xlsx":
                 case ".xls":
                     return "Drop the file to import strings";
+                case ".sharesdb":
+                    return "Drop to import sharelist";
                 default:
                     return "Drop to process file";
             }
@@ -254,6 +401,12 @@ namespace SDBEditor
                 {
                     RangeSelectionGrid.Visibility = Visibility.Visible;
                 }
+            }
+            else if (extension == ".sharesdb")
+            {
+                // For .sharesdb files, we don't need the import options panel
+                // The merge will happen directly after user confirmation
+                ImportOptionsPanel.Visibility = Visibility.Collapsed;
             }
         }
 
@@ -283,6 +436,21 @@ namespace SDBEditor
                     {
                         case ".sdb":
                             LoadSdbFile(validFile);
+                            break;
+
+                        case ".sharesdb":
+                            // Check if an SDB file is loaded first
+                            if (string.IsNullOrEmpty(_currentFile))
+                            {
+                                MessageBox.Show("Please open an SDB file first before merging a sharelist.",
+                                               "No File Loaded",
+                                               MessageBoxButton.OK,
+                                               MessageBoxImage.Information);
+                                return;
+                            }
+
+                            // Go directly to the sharelist info dialog
+                            MergeFromSharelistFile(validFile);
                             break;
 
                         case ".csv":
@@ -399,6 +567,34 @@ namespace SDBEditor
             {
                 MessageBox.Show($"Error during import: {ex.Message}", "Import Error", MessageBoxButton.OK, MessageBoxImage.Error);
             }
+        }
+
+        private void SetupLanguageUpdateHandling()
+        {
+            // Subscribe to language update events
+            LanguageUpdateHandler.OnLanguageUpdated += (sender, e) =>
+            {
+                // Update UI on the main thread
+                Dispatcher.BeginInvoke(new Action(() =>
+                {
+                    // Update the game info text
+                    if (GameExtraInfoText != null)
+                    {
+                        GameExtraInfoText.Text = $", Language: {e.NewLanguage}";
+                    }
+
+                    // Update window title if needed
+                    if (e.NewGame != "Unknown Game" && e.NewLanguage != "Unknown Language")
+                    {
+                        this.Title = $"SDB Editor - {e.NewGame} - {e.NewLanguage}";
+                    }
+
+                    // Force UI refresh
+                    this.UpdateLayout();
+
+                    Console.WriteLine($"[UI] Language updated from {e.OldLanguage} to {e.NewLanguage}");
+                }));
+            };
         }
 
         /// <summary>
@@ -1444,6 +1640,1385 @@ namespace SDBEditor
             );
         }
 
+        #region Sharelist Management
+
+        private void InitializeSharelist()
+        {
+            // Bind the sharelist to the UI
+            SharelistItemsControl.ItemsSource = SharelistManager.Instance.Entries;
+
+            // Update count when collection changes
+            SharelistManager.Instance.Entries.CollectionChanged += (s, e) =>
+            {
+                UpdateSharelistCount();
+            };
+
+            UpdateSharelistCount();
+        }
+
+        private void UpdateSharelistCount()
+
+        {
+
+            int count = SharelistManager.Instance.Entries.Count;
+
+            int newCount = SharelistManager.Instance.Entries.Count(e => e.IsNewAddition);
+
+            SharelistCountText.Text = count.ToString();
+
+            SharelistButtonBadgeText.Text = count.ToString();
+
+            SharelistButtonBadge.Visibility = count > 0 ? Visibility.Visible : Visibility.Collapsed;
+
+            // Update the title to show new entries if any
+
+            if (newCount > 0)
+
+            {
+
+                // Add a badge or indicator in the title
+
+                var titlePanel = SharelistPanel.FindName("SharelistTitlePanel") as StackPanel;
+
+                if (titlePanel != null)
+
+                {
+
+                    // Check if the new entries badge already exists
+
+                    var existingBadge = titlePanel.Children.OfType<Border>()
+
+                        .FirstOrDefault(b => b.Name == "NewEntriesBadge");
+
+                    if (existingBadge == null)
+
+                    {
+
+                        // Create a new badge
+
+                        Border newBadge = new Border
+
+                        {
+
+                            Name = "NewEntriesBadge",
+
+                            Background = new SolidColorBrush(Color.FromRgb(255, 80, 80)),
+
+                            CornerRadius = new CornerRadius(10),
+
+                            Margin = new Thickness(10, 0, 0, 0),
+
+                            Padding = new Thickness(8, 2, 8, 2),
+
+                            VerticalAlignment = VerticalAlignment.Center
+
+                        };
+
+                        TextBlock badgeText = new TextBlock
+
+                        {
+
+                            Text = $"{newCount} new",
+
+                            Foreground = Brushes.White,
+
+                            FontWeight = FontWeights.Bold,
+
+                            FontSize = 11
+
+                        };
+
+                        newBadge.Child = badgeText;
+
+                        titlePanel.Children.Add(newBadge);
+
+                    }
+
+                    else
+
+                    {
+
+                        // Update existing badge
+
+                        var badgeText = existingBadge.Child as TextBlock;
+
+                        if (badgeText != null)
+
+                        {
+
+                            badgeText.Text = $"{newCount} new";
+
+                        }
+
+                        // Show/hide based on count
+
+                        existingBadge.Visibility = newCount > 0 ? Visibility.Visible : Visibility.Collapsed;
+
+                    }
+
+                }
+
+            }
+
+        }
+
+        private void ToggleSharelist_Click(object sender, RoutedEventArgs e)
+        {
+            if (SharelistPanel.Visibility == Visibility.Visible)
+            {
+                // Hide with animation
+                var slideOut = new DoubleAnimation
+                {
+                    From = 0,
+                    To = 350,
+                    Duration = TimeSpan.FromMilliseconds(200),
+                    EasingFunction = new QuadraticEase { EasingMode = EasingMode.EaseInOut }
+                };
+
+                var transform = new TranslateTransform();
+                SharelistPanel.RenderTransform = transform;
+
+                slideOut.Completed += (s, args) => SharelistPanel.Visibility = Visibility.Collapsed;
+                transform.BeginAnimation(TranslateTransform.XProperty, slideOut);
+            }
+            else
+            {
+                // Show with animation
+                SharelistPanel.Visibility = Visibility.Visible;
+
+                var slideIn = new DoubleAnimation
+                {
+                    From = 350,
+                    To = 0,
+                    Duration = TimeSpan.FromMilliseconds(200),
+                    EasingFunction = new QuadraticEase { EasingMode = EasingMode.EaseInOut }
+                };
+
+                var transform = new TranslateTransform();
+                SharelistPanel.RenderTransform = transform;
+                transform.BeginAnimation(TranslateTransform.XProperty, slideIn);
+            }
+        }
+
+        private void CloseSharelist_Click(object sender, RoutedEventArgs e)
+        {
+            ToggleSharelist_Click(sender, e);
+        }
+
+        private void UpdateSharelist_Click(object sender, RoutedEventArgs e)
+        {
+            // Check if we have an existing sharelist loaded
+            if (SharelistManager.Instance.Entries.Count == 0)
+            {
+                MessageBox.Show("No sharelist loaded. Please import a sharelist first.",
+                               "No Sharelist",
+                               MessageBoxButton.OK,
+                               MessageBoxImage.Information);
+                return;
+            }
+
+            // Count new entries (those marked with IsNewAddition = true)
+            int newEntriesCount = SharelistManager.Instance.Entries.Count(entry => entry.IsNewAddition);
+
+            // Open the update dialog
+            var updateDialog = new SharelistUpdateDialog(SharelistManager.Instance.CurrentMetadata, newEntriesCount)
+            {
+                Owner = this
+            };
+
+            if (updateDialog.ShowDialog() == true && updateDialog.UpdateAccepted)
+            {
+                // Create the update record
+                var update = SharelistManager.Instance.FinalizeUpdate(updateDialog.NewVersion, updateDialog.UpdateNotes);
+
+                // Show update confirmation
+                MessageBox.Show(
+                    $"Sharelist updated to version {updateDialog.NewVersion}.\n" +
+                    $"Added {update.EntriesAdded} new entries.\n\n" +
+                    $"Save the sharelist to keep these changes.",
+                    "Update Complete",
+                    MessageBoxButton.OK,
+                    MessageBoxImage.Information);
+            }
+        }
+
+        private void AddToSharelist_Click(object sender, RoutedEventArgs e)
+        {
+            if (StringsDataGrid.SelectedItems.Count == 0)
+            {
+                MessageBox.Show("Please select one or more strings to add to the sharelist.",
+                               "No Selection",
+                               MessageBoxButton.OK,
+                               MessageBoxImage.Information);
+                return;
+            }
+
+            int addedCount = 0;
+            foreach (var item in StringsDataGrid.SelectedItems)
+            {
+                if (item is StringEntryViewModel viewModel)
+                {
+                    SharelistManager.Instance.AddEntry(viewModel.HashId, viewModel.Text);
+                    addedCount++;
+                }
+            }
+
+            UpdateStatus($"Added {addedCount} items to sharelist");
+
+            // Flash the sharelist button to draw attention
+            var flashAnimation = new ColorAnimation
+            {
+                From = Colors.Green,
+                To = Colors.White,
+                Duration = TimeSpan.FromMilliseconds(300),
+                AutoReverse = true,
+                RepeatBehavior = new RepeatBehavior(2)
+            };
+
+            var brush = new SolidColorBrush(Colors.White);
+            SharelistButtonBadge.Background = brush;
+            brush.BeginAnimation(SolidColorBrush.ColorProperty, flashAnimation);
+        }
+
+        private void RemoveFromSharelist_Click(object sender, RoutedEventArgs e)
+        {
+            if (sender is Button button && button.Tag is SharelistEntry entry)
+            {
+                SharelistManager.Instance.RemoveEntry(entry);
+                UpdateStatus("Removed from sharelist");
+            }
+        }
+
+        private void ExportSharelist_Click(object sender, RoutedEventArgs e)
+        {
+            if (SharelistManager.Instance.Entries.Count == 0)
+            {
+                MessageBox.Show("Sharelist is empty. Add some entries first.",
+                               "Empty Sharelist",
+                               MessageBoxButton.OK,
+                               MessageBoxImage.Information);
+                return;
+            }
+
+            // Check if we have any new entries that need to be finalized in an update
+            int newEntriesCount = SharelistManager.Instance.Entries.Count(entry => entry.IsNewAddition);
+            if (newEntriesCount > 0)
+            {
+                bool promptResult = ThemedMessageBox.Show(
+                    "New Entries Detected",
+                    $"You have {newEntriesCount} new entries that need to be finalized. " +
+                    "Do you want to create an update now?",
+                    this); // Pass 'this' as the owner
+
+                if (promptResult)
+                {
+                    // Open the update dialog
+                    var updateDialog = new SharelistUpdateDialog(SharelistManager.Instance.CurrentMetadata, newEntriesCount)
+                    {
+                        Owner = this
+                    };
+                    if (updateDialog.ShowDialog() == true && updateDialog.UpdateAccepted)
+                    {
+                        // Create the update record
+                        SharelistManager.Instance.FinalizeUpdate(updateDialog.NewVersion, updateDialog.UpdateNotes);
+                    }
+                    else
+                    {
+                        // User cancelled update, ask if they still want to export
+                        bool continueResult = ThemedMessageBox.Show(
+                            "Continue Export",
+                            "Do you still want to export without finalizing the update?",
+                            this);
+
+                        if (!continueResult)
+                        {
+                            return;
+                        }
+                    }
+                }
+            }
+
+            // Show metadata dialog
+            var metadataDialog = new SDBEditor.Views.RollbackDialog.SharelistMetadataDialog(SharelistManager.Instance.CurrentMetadata)
+            {
+                Owner = this
+            };
+
+            if (metadataDialog.ShowDialog() == true)
+            {
+                var saveDialog = new SaveFileDialog
+                {
+                    Filter = "Sharelist Files (*.sharesdb)|*.sharesdb|All Files (*.*)|*.*",
+                    FileName = $"sharelist_{metadataDialog.Metadata.Author}_{metadataDialog.Metadata.Version.Replace(".", "_")}_{DateTime.Now:yyyyMMdd}.sharesdb",
+                    Title = "Export Sharelist"
+                };
+
+                if (saveDialog.ShowDialog() == true)
+                {
+                    if (SharelistManager.Instance.ExportToFile(saveDialog.FileName, metadataDialog.Metadata))
+                    {
+                        UpdateStatus($"Exported {SharelistManager.Instance.Entries.Count} entries to {System.IO.Path.GetFileName(saveDialog.FileName)}");
+                        MessageBox.Show($"Successfully exported {SharelistManager.Instance.Entries.Count} entries.",
+                                       "Export Complete",
+                                       MessageBoxButton.OK,
+                                       MessageBoxImage.Information);
+                    }
+                    else
+                    {
+                        MessageBox.Show("Failed to export sharelist.",
+                                       "Export Error",
+                                       MessageBoxButton.OK,
+                                       MessageBoxImage.Error);
+                    }
+                }
+            }
+        }
+
+        private void PrepareSharelistUpdate_Click(object sender, RoutedEventArgs e)
+        {
+            // This method prepares the sharelist for adding new entries
+            // It marks all current entries as "original" so new ones can be tracked
+
+            if (SharelistManager.Instance.Entries.Count == 0)
+            {
+                MessageBox.Show("No sharelist loaded. Please import a sharelist first.",
+                              "No Sharelist",
+                              MessageBoxButton.OK,
+                              MessageBoxImage.Information);
+                return;
+            }
+
+            SharelistManager.Instance.PrepareForUpdate();
+
+            // Update UI to reflect state change
+            UpdateStatus("Sharelist prepared for updates. Add new entries and they will be tracked.");
+
+            // Update the UI to make it clear we're in "update mode"
+            var updateButton = SharelistPanel.FindName("UpdateSharelistButton") as Button;
+            if (updateButton != null)
+            {
+                updateButton.IsEnabled = true;
+
+                // Optional: add a visual indicator that we're in update mode
+                var updateIcon = updateButton.Content as StackPanel;
+                if (updateIcon != null)
+                {
+                    foreach (var child in updateIcon.Children)
+                    {
+                        if (child is TextBlock textBlock && textBlock.Text == "Update")
+                        {
+                            textBlock.Foreground = new SolidColorBrush(Color.FromRgb(255, 255, 100));
+                            textBlock.FontWeight = FontWeights.Bold;
+                            break;
+                        }
+                    }
+                }
+            }
+        }
+
+        // Override the ImportSharelist_Click method to add update capability
+        private void ImportSharelist_Click(object sender, RoutedEventArgs e)
+        {
+            var openDialog = new OpenFileDialog
+            {
+                Filter = "Sharelist Files (*.sharesdb)|*.sharesdb|Text Files (*.txt)|*.txt|All Files (*.*)|*.*",
+                Title = "Import Sharelist"
+            };
+
+            if (openDialog.ShowDialog() == true)
+            {
+                // Clear existing sharelist first
+                SharelistManager.Instance.Clear();
+
+                // Show info dialog
+                var result = SharelistManager.Instance.ImportFromFile(openDialog.FileName);
+                int imported = result.imported;
+                SharelistMetadata fullMetadata = result.metadata;
+
+                if (imported > 0)
+                {
+                    var infoDialog = new SDBEditor.Views.RollbackDialog.SharelistInfoDialog(fullMetadata, imported)
+                    {
+                        Owner = this
+                    };
+
+                    if (infoDialog.ShowDialog() == true)
+                    {
+                        UpdateStatus($"Imported {imported} entries from {System.IO.Path.GetFileName(openDialog.FileName)}");
+
+                        // Handle the selected action
+                        switch (infoDialog.SelectedAction)
+                        {
+                            case SharelistInfoDialog.ImportAction.PrepareForUpdate:
+                                // Prepare for updating
+                                SharelistManager.Instance.PrepareForUpdate();
+                                UpdateStatus("Sharelist prepared for updates. Add new entries and they will be tracked.");
+
+                                // Enable the update button
+                                var updateButton = SharelistPanel.FindName("UpdateSharelistButton") as Button;
+                                if (updateButton != null)
+                                {
+                                    updateButton.IsEnabled = true;
+                                }
+
+                                // Show version info if available
+                                if (fullMetadata != null && !string.IsNullOrEmpty(fullMetadata.Version))
+                                {
+                                    var versionInfoPanel = SharelistPanel.FindName("VersionInfoPanel") as StackPanel;
+                                    var versionText = SharelistPanel.FindName("VersionText") as TextBlock;
+
+                                    if (versionInfoPanel != null && versionText != null)
+                                    {
+                                        versionText.Text = fullMetadata.Version;
+                                        versionInfoPanel.Visibility = Visibility.Visible;
+                                    }
+                                }
+                                break;
+
+                            case SharelistInfoDialog.ImportAction.MergeImmediately:
+                                if (!string.IsNullOrEmpty(_currentFile))
+                                {
+                                    // Check for conflicts first
+                                    var conflicts = new List<ConflictEntry>();
+                                    var noConflicts = new List<SharelistEntry>();
+
+                                    foreach (var entry in SharelistManager.Instance.Entries)
+                                    {
+                                        var existingEntry = _sdbHandler.GetStringByHash(entry.HashId);
+                                        if (existingEntry != null)
+                                        {
+                                            conflicts.Add(new ConflictEntry
+                                            {
+                                                NewEntry = entry,
+                                                ExistingEntry = existingEntry,
+                                                Resolution = ConflictResolution.Skip // Default to skip
+                                            });
+                                        }
+                                        else
+                                        {
+                                            noConflicts.Add(entry);
+                                        }
+                                    }
+
+                                    // Handle conflicts if any exist
+                                    if (conflicts.Count > 0)
+                                    {
+                                        var conflictDialog = new ConflictResolutionDialog(conflicts)
+                                        {
+                                            Owner = this
+                                        };
+
+                                        if (conflictDialog.ShowDialog() != true)
+                                        {
+                                            // User cancelled conflict resolution
+                                            UpdateStatus("Merge cancelled due to conflicts");
+                                            return;
+                                        }
+
+                                        // Process resolved conflicts
+                                        foreach (var conflict in conflicts)
+                                        {
+                                            switch (conflict.Resolution)
+                                            {
+                                                case ConflictResolution.UseNewHashId:
+                                                    var existingEntry = conflict.NewEntry;
+                                                    noConflicts.Add(new SharelistEntry(
+                                                        conflict.NewHashId,
+                                                        conflict.NewEntry.Text,
+                                                        existingEntry.ToString() // Use string representation as third parameter
+                                                    ));
+                                                    break;
+                                                case ConflictResolution.Replace:
+                                                    // Update existing entry with new text
+                                                    _sdbHandler.UpdateString(conflict.NewEntry.HashId, conflict.NewEntry.Text);
+                                                    break;
+                                                case ConflictResolution.Skip:
+                                                    // Do nothing - skip this entry
+                                                    break;
+                                            }
+                                        }
+                                    }
+
+                                    // Proceed with merge if we have entries to add
+                                    if (noConflicts.Count > 0 || conflicts.Any(c => c.Resolution == ConflictResolution.Replace))
+                                    {
+                                        // Create backup before merge
+                                        _backupHandler.CreateBackup(_currentFile, "pre_import_merge");
+
+                                        int addedCount = 0;
+                                        int replacedCount = conflicts.Count(c => c.Resolution == ConflictResolution.Replace);
+
+                                        // Add non-conflicted entries
+                                        foreach (var entry in noConflicts)
+                                        {
+                                            if (_sdbHandler.AddString(entry.Text, entry.HashId))
+                                            {
+                                                addedCount++;
+                                            }
+                                        }
+
+                                        // Refresh display to show changes
+                                        DisplayStrings();
+
+                                        // Calculate final statistics
+                                        int skippedCount = conflicts.Count(c => c.Resolution == ConflictResolution.Skip);
+                                        int newHashCount = conflicts.Count(c => c.Resolution == ConflictResolution.UseNewHashId);
+
+                                        UpdateStatus($"Import & Merge completed: {imported} imported, {addedCount + newHashCount} merged, {replacedCount} replaced, {skippedCount} skipped");
+
+                                        var successDialog = new ImportSuccessDialog(
+                                            "Import & Merge Complete",
+                                            $"Successfully imported and merged {imported} entries from {fullMetadata.Author}'s sharelist.",
+                                            addedCount + newHashCount,  // new entries
+                                            replacedCount,              // replaced entries  
+                                            skippedCount               // skipped entries
+                                        )
+                                        {
+                                            Owner = this
+                                        };
+                                        successDialog.ShowDialog();
+                                    }
+                                    else
+                                    {
+                                        MessageBox.Show("No entries were merged.", "Merge Complete", MessageBoxButton.OK, MessageBoxImage.Information);
+                                    }
+                                }
+                                else
+                                {
+                                    // No SDB file loaded, just show import success
+                                    MessageBox.Show(
+                                        $"Successfully imported {imported} entries from {fullMetadata.Author}'s sharelist.\n\n" +
+                                        "Note: Open an SDB file to merge these entries into it.",
+                                        "Import Complete",
+                                        MessageBoxButton.OK,
+                                        MessageBoxImage.Information);
+                                }
+                                break;
+
+                            case SharelistInfoDialog.ImportAction.JustImport:
+                            default:
+                                // Do nothing - just keep the sharelist as is
+                                UpdateStatus($"Sharelist loaded with {imported} entries");
+                                break;
+                        }
+                    }
+                    else
+                    {
+                        // User cancelled info dialog, remove imported entries
+                        SharelistManager.Instance.Clear();
+                        UpdateStatus("Import cancelled");
+                    }
+                }
+                else
+                {
+                    MessageBox.Show("No valid entries found in the file.",
+                                   "Import Failed",
+                                   MessageBoxButton.OK,
+                                   MessageBoxImage.Warning);
+                }
+            }
+        }
+
+        // Supporting classes for conflict resolution
+        public class ConflictEntry
+        {
+            public SharelistEntry NewEntry { get; set; }
+            public StringEntry ExistingEntry { get; set; }
+            public ConflictResolution Resolution { get; set; }
+            public uint NewHashId { get; set; }
+        }
+
+        public enum ConflictResolution
+        {
+            Skip,           // Keep existing, ignore new
+            Replace,        // Replace existing with new text
+            UseNewHashId    // Use new hash ID for the new entry
+        }
+
+        // Conflict Resolution Dialog
+        public class ConflictResolutionDialog : Window
+        {
+            private List<ConflictEntry> _conflicts;
+            private StackPanel _conflictsPanel;
+
+            public ConflictResolutionDialog(List<ConflictEntry> conflicts)
+            {
+                _conflicts = conflicts;
+
+                Title = "Resolve Hash ID Conflicts";
+                Width = 800;
+                Height = 600;
+                WindowStartupLocation = WindowStartupLocation.CenterOwner;
+                Background = new SolidColorBrush(Color.FromRgb(45, 45, 48));
+
+                InitializeComponent();
+            }
+
+            private void InitializeComponent()
+            {
+                Grid mainGrid = new Grid();
+                mainGrid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto }); // Header
+                mainGrid.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) }); // Content
+                mainGrid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto }); // Buttons
+
+                // Header
+                Border headerBorder = new Border
+                {
+                    Background = new SolidColorBrush(Color.FromRgb(35, 35, 38)),
+                    Padding = new Thickness(20, 15, 20, 15)
+                };
+
+                StackPanel headerPanel = new StackPanel();
+                headerPanel.Children.Add(new TextBlock
+                {
+                    Text = "Hash ID Conflicts Detected",
+                    Foreground = new SolidColorBrush(Color.FromRgb(255, 200, 0)),
+                    FontSize = 18,
+                    FontWeight = FontWeights.Bold
+                });
+                headerPanel.Children.Add(new TextBlock
+                {
+                    Text = $"{_conflicts.Count} entries have Hash IDs that already exist in the current SDB.",
+                    Foreground = Brushes.White,
+                    FontSize = 14,
+                    Margin = new Thickness(0, 5, 0, 0)
+                });
+                headerPanel.Children.Add(new TextBlock
+                {
+                    Text = "Choose how to resolve each conflict:",
+                    Foreground = new SolidColorBrush(Color.FromRgb(180, 180, 180)),
+                    FontSize = 12,
+                    Margin = new Thickness(0, 5, 0, 0)
+                });
+
+                headerBorder.Child = headerPanel;
+                Grid.SetRow(headerBorder, 0);
+                mainGrid.Children.Add(headerBorder);
+
+                // Scrollable content
+                ScrollViewer scrollViewer = new ScrollViewer
+                {
+                    VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
+                    Margin = new Thickness(20, 20, 20, 10)
+                };
+
+                _conflictsPanel = new StackPanel();
+                CreateConflictItems();
+                scrollViewer.Content = _conflictsPanel;
+                Grid.SetRow(scrollViewer, 1);
+                mainGrid.Children.Add(scrollViewer);
+
+                // Buttons
+                StackPanel buttonPanel = new StackPanel
+                {
+                    Orientation = Orientation.Horizontal,
+                    HorizontalAlignment = HorizontalAlignment.Right,
+                    Margin = new Thickness(20)
+                };
+
+                Button applyAllButton = CreateButton("Apply to All", false);
+                applyAllButton.Margin = new Thickness(0, 0, 10, 0);
+                applyAllButton.Click += ApplyToAll_Click;
+                buttonPanel.Children.Add(applyAllButton);
+
+                Button cancelButton = CreateButton("Cancel", false);
+                cancelButton.Margin = new Thickness(0, 0, 10, 0);
+                cancelButton.Click += (s, e) => DialogResult = false;
+                buttonPanel.Children.Add(cancelButton);
+
+                Button continueButton = CreateButton("Continue", true);
+                continueButton.Click += (s, e) => DialogResult = true;
+                buttonPanel.Children.Add(continueButton);
+
+                Grid.SetRow(buttonPanel, 2);
+                mainGrid.Children.Add(buttonPanel);
+
+                Content = mainGrid;
+            }
+
+            private void CreateConflictItems()
+            {
+                for (int i = 0; i < _conflicts.Count; i++)
+                {
+                    var conflict = _conflicts[i];
+
+                    Border itemBorder = new Border
+                    {
+                        Background = new SolidColorBrush(Color.FromRgb(35, 35, 38)),
+                        BorderThickness = new Thickness(1),
+                        BorderBrush = new SolidColorBrush(Color.FromRgb(60, 60, 65)),
+                        CornerRadius = new CornerRadius(4),
+                        Margin = new Thickness(0, 0, 0, 10),
+                        Padding = new Thickness(15)
+                    };
+
+                    StackPanel itemPanel = new StackPanel();
+
+                    // Hash ID info
+                    StackPanel hashPanel = new StackPanel { Orientation = Orientation.Horizontal };
+                    hashPanel.Children.Add(new TextBlock
+                    {
+                        Text = "Hash ID: ",
+                        Foreground = Brushes.White,
+                        FontWeight = FontWeights.SemiBold
+                    });
+                    hashPanel.Children.Add(new TextBlock
+                    {
+                        Text = conflict.NewEntry.HashId.ToString(),
+                        Foreground = new SolidColorBrush(Color.FromRgb(255, 200, 0)),
+                        FontFamily = new FontFamily("Consolas"),
+                        FontWeight = FontWeights.SemiBold
+                    });
+                    hashPanel.Children.Add(new TextBlock
+                    {
+                        Text = $" (0x{conflict.NewEntry.HashId:X})",
+                        Foreground = new SolidColorBrush(Color.FromRgb(150, 255, 150)),
+                        FontFamily = new FontFamily("Consolas"),
+                        Margin = new Thickness(5, 0, 0, 0)
+                    });
+                    itemPanel.Children.Add(hashPanel);
+
+                    // Existing vs New text
+                    Grid textGrid = new Grid { Margin = new Thickness(0, 10, 0, 10) };
+                    textGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+                    textGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+
+                    // Existing text
+                    StackPanel existingPanel = new StackPanel { Margin = new Thickness(0, 0, 10, 0) };
+                    existingPanel.Children.Add(new TextBlock
+                    {
+                        Text = "Existing Text:",
+                        Foreground = new SolidColorBrush(Color.FromRgb(255, 100, 100)),
+                        FontWeight = FontWeights.SemiBold,
+                        Margin = new Thickness(0, 0, 0, 5)
+                    });
+                    existingPanel.Children.Add(new TextBox
+                    {
+                        Text = conflict.ExistingEntry.Text,
+                        Background = new SolidColorBrush(Color.FromRgb(50, 30, 30)),
+                        Foreground = Brushes.White,
+                        BorderThickness = new Thickness(1),
+                        BorderBrush = new SolidColorBrush(Color.FromRgb(255, 100, 100)),
+                        Padding = new Thickness(8),
+                        IsReadOnly = true,
+                        TextWrapping = TextWrapping.Wrap,
+                        MaxHeight = 80
+                    });
+                    Grid.SetColumn(existingPanel, 0);
+                    textGrid.Children.Add(existingPanel);
+
+                    // New text
+                    StackPanel newPanel = new StackPanel { Margin = new Thickness(10, 0, 0, 0) };
+                    newPanel.Children.Add(new TextBlock
+                    {
+                        Text = "New Text:",
+                        Foreground = new SolidColorBrush(Color.FromRgb(100, 255, 100)),
+                        FontWeight = FontWeights.SemiBold,
+                        Margin = new Thickness(0, 0, 0, 5)
+                    });
+                    newPanel.Children.Add(new TextBox
+                    {
+                        Text = conflict.NewEntry.Text,
+                        Background = new SolidColorBrush(Color.FromRgb(30, 50, 30)),
+                        Foreground = Brushes.White,
+                        BorderThickness = new Thickness(1),
+                        BorderBrush = new SolidColorBrush(Color.FromRgb(100, 255, 100)),
+                        Padding = new Thickness(8),
+                        IsReadOnly = true,
+                        TextWrapping = TextWrapping.Wrap,
+                        MaxHeight = 80
+                    });
+                    Grid.SetColumn(newPanel, 1);
+                    textGrid.Children.Add(newPanel);
+
+                    itemPanel.Children.Add(textGrid);
+
+                    // Resolution options
+                    StackPanel resolutionPanel = new StackPanel();
+                    resolutionPanel.Children.Add(new TextBlock
+                    {
+                        Text = "Resolution:",
+                        Foreground = Brushes.White,
+                        FontWeight = FontWeights.SemiBold,
+                        Margin = new Thickness(0, 0, 0, 5)
+                    });
+
+                    // Create radio buttons for resolution options
+                    var skipRadio = new RadioButton
+                    {
+                        Content = "Skip (keep existing, ignore new)",
+                        GroupName = $"conflict_{i}",
+                        Foreground = Brushes.White,
+                        IsChecked = true,
+                        Margin = new Thickness(0, 2, 0, 2)
+                    };
+                    skipRadio.Checked += (s, e) => conflict.Resolution = ConflictResolution.Skip;
+
+                    var replaceRadio = new RadioButton
+                    {
+                        Content = "Replace (update existing with new text)",
+                        GroupName = $"conflict_{i}",
+                        Foreground = Brushes.White,
+                        Margin = new Thickness(0, 2, 0, 2)
+                    };
+                    replaceRadio.Checked += (s, e) => conflict.Resolution = ConflictResolution.Replace;
+
+                    var newHashRadio = new RadioButton
+                    {
+                        Content = "Use new Hash ID for imported entry:",
+                        GroupName = $"conflict_{i}",
+                        Foreground = Brushes.White,
+                        Margin = new Thickness(0, 2, 0, 2)
+                    };
+
+                    // New Hash ID input
+                    var newHashTextBox = new TextBox
+                    {
+                        Width = 150,
+                        Height = 30,
+                        Background = new SolidColorBrush(Color.FromRgb(30, 30, 30)),
+                        Foreground = Brushes.White,
+                        BorderThickness = new Thickness(1),
+                        BorderBrush = new SolidColorBrush(Color.FromRgb(70, 70, 75)),
+                        Padding = new Thickness(8, 5, 8, 5),
+                        Margin = new Thickness(20, 5, 0, 2),
+                        Text = (conflict.NewEntry.HashId + 1000000).ToString(), // Suggest a new ID
+                        IsEnabled = false
+                    };
+
+                    newHashRadio.Checked += (s, e) => {
+                        conflict.Resolution = ConflictResolution.UseNewHashId;
+                        newHashTextBox.IsEnabled = true;
+                        newHashTextBox.Focus();
+                    };
+
+                    skipRadio.Checked += (s, e) => newHashTextBox.IsEnabled = false;
+                    replaceRadio.Checked += (s, e) => newHashTextBox.IsEnabled = false;
+
+                    newHashTextBox.TextChanged += (s, e) => {
+                        if (uint.TryParse(newHashTextBox.Text, out uint newHash))
+                        {
+                            conflict.NewHashId = newHash;
+                            newHashTextBox.BorderBrush = new SolidColorBrush(Color.FromRgb(0, 200, 0));
+                        }
+                        else
+                        {
+                            newHashTextBox.BorderBrush = new SolidColorBrush(Color.FromRgb(255, 80, 80));
+                        }
+                    };
+
+                    // Initialize the new hash ID
+                    conflict.NewHashId = conflict.NewEntry.HashId + 1000000;
+
+                    resolutionPanel.Children.Add(skipRadio);
+                    resolutionPanel.Children.Add(replaceRadio);
+                    resolutionPanel.Children.Add(newHashRadio);
+                    resolutionPanel.Children.Add(newHashTextBox);
+
+                    itemPanel.Children.Add(resolutionPanel);
+                    itemBorder.Child = itemPanel;
+                    _conflictsPanel.Children.Add(itemBorder);
+                }
+            }
+
+            private void ApplyToAll_Click(object sender, RoutedEventArgs e)
+            {
+                var dialog = new ApplyToAllDialog();
+                if (dialog.ShowDialog() == true)
+                {
+                    foreach (var conflict in _conflicts)
+                    {
+                        conflict.Resolution = dialog.SelectedResolution;
+                        if (dialog.SelectedResolution == ConflictResolution.UseNewHashId)
+                        {
+                            conflict.NewHashId = conflict.NewEntry.HashId + dialog.HashIdOffset;
+                        }
+                    }
+
+                    // Refresh the display
+                    _conflictsPanel.Children.Clear();
+                    CreateConflictItems();
+                }
+            }
+
+            private Button CreateButton(string content, bool isPrimary)
+            {
+                var button = new Button
+                {
+                    Content = content,
+                    Width = 100,
+                    Height = 36,
+                    FontSize = 13,
+                    FontWeight = FontWeights.Medium,
+                    BorderThickness = new Thickness(0)
+                };
+
+                Color bgColor = isPrimary ? Color.FromRgb(0, 170, 70) : Color.FromRgb(60, 60, 65);
+                button.Background = new SolidColorBrush(bgColor);
+                button.Foreground = Brushes.White;
+
+                return button;
+            }
+        }
+
+        /// <summary>
+        /// Success dialog that matches the existing theme of AddStringDialog and others
+        /// </summary>
+        public class ImportSuccessDialog : Window
+        {
+            public ImportSuccessDialog(string title, string message, int newEntries, int replacedEntries, int skippedEntries)
+            {
+                // Configure window to match existing dialogs
+                Title = title;
+                Width = 600;
+                Height = 350;
+                WindowStartupLocation = WindowStartupLocation.CenterOwner;
+                Background = new SolidColorBrush(Color.FromRgb(45, 45, 48));
+
+                // Create main container with border radius - matching AddStringDialog
+                Border mainBorder = new Border
+                {
+                    CornerRadius = new CornerRadius(6),
+                    Background = new SolidColorBrush(Color.FromRgb(45, 45, 48)),
+                    Margin = new Thickness(0)
+                };
+
+                // Create layout
+                Grid mainGrid = new Grid();
+                mainGrid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto }); // Title bar
+                mainGrid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto }); // Stats panel
+                mainGrid.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) }); // Message
+                mainGrid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto }); // Buttons
+
+                // Create custom title bar - matching existing dialogs
+                Border titleBar = new Border
+                {
+                    Background = new SolidColorBrush(Color.FromRgb(35, 35, 38)),
+                    Height = 40,
+                    Padding = new Thickness(15, 0, 10, 0)
+                };
+
+                Grid titleGrid = new Grid();
+                titleGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto }); // Icon
+                titleGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) }); // Title
+
+                // Success icon with glowing effect - matching existing dialogs
+                Border iconRect = new Border
+                {
+                    Width = 16,
+                    Height = 16,
+                    Background = new SolidColorBrush(Color.FromRgb(0, 255, 80)),
+                    CornerRadius = new CornerRadius(2),
+                    Margin = new Thickness(0, 0, 10, 0),
+                    VerticalAlignment = VerticalAlignment.Center
+                };
+
+                // Add glow effect to icon - matching existing dialogs
+                iconRect.Effect = new DropShadowEffect
+                {
+                    BlurRadius = 15,
+                    ShadowDepth = 0,
+                    Color = Color.FromRgb(0, 255, 80),
+                    Opacity = 0.7
+                };
+
+                Grid.SetColumn(iconRect, 0);
+                titleGrid.Children.Add(iconRect);
+
+                // Title text - matching existing dialogs
+                TextBlock titleText = new TextBlock
+                {
+                    Text = title,
+                    Foreground = Brushes.White,
+                    FontSize = 14,
+                    FontWeight = FontWeights.Medium,
+                    VerticalAlignment = VerticalAlignment.Center
+                };
+                Grid.SetColumn(titleText, 1);
+                titleGrid.Children.Add(titleText);
+
+                titleBar.Child = titleGrid;
+                Grid.SetRow(titleBar, 0);
+                mainGrid.Children.Add(titleBar);
+
+                // Make title bar draggable - matching existing dialogs
+                titleBar.MouseLeftButtonDown += (s, e) => DragMove();
+
+                // Stats panel with badges layout - matching AddStringDialog style
+                Border statsPanelBackground = new Border
+                {
+                    Background = new SolidColorBrush(Color.FromRgb(35, 35, 38)),
+                    BorderThickness = new Thickness(0, 0, 0, 1),
+                    BorderBrush = new SolidColorBrush(Color.FromRgb(60, 60, 65)),
+                    Padding = new Thickness(20, 15, 20, 15)
+                };
+
+                // Horizontal stack panel for badges - matching AddStringDialog
+                StackPanel badgesPanel = new StackPanel
+                {
+                    Orientation = Orientation.Horizontal,
+                    HorizontalAlignment = HorizontalAlignment.Left,
+                    Margin = new Thickness(0, 0, 0, 0)
+                };
+
+                // New entries badge with green background
+                if (newEntries > 0)
+                {
+                    Border newBadge = new Border
+                    {
+                        Background = new SolidColorBrush(Color.FromArgb(150, 0, 50, 25)),
+                        CornerRadius = new CornerRadius(8),
+                        Padding = new Thickness(10, 6, 10, 6),
+                        Margin = new Thickness(0, 0, 15, 0)
+                    };
+                    StackPanel newPanel = new StackPanel { Orientation = Orientation.Horizontal };
+                    newPanel.Children.Add(new TextBlock
+                    {
+                        Text = "Added: ",
+                        Foreground = new SolidColorBrush(Color.FromRgb(220, 220, 220)),
+                        FontSize = 13,
+                        VerticalAlignment = VerticalAlignment.Center
+                    });
+                    newPanel.Children.Add(new TextBlock
+                    {
+                        Text = newEntries.ToString(),
+                        Foreground = new SolidColorBrush(Color.FromRgb(150, 255, 150)),
+                        FontWeight = FontWeights.SemiBold,
+                        FontSize = 13,
+                        VerticalAlignment = VerticalAlignment.Center
+                    });
+                    newBadge.Child = newPanel;
+                    badgesPanel.Children.Add(newBadge);
+                }
+
+                // Replaced entries badge with blue background
+                if (replacedEntries > 0)
+                {
+                    Border replacedBadge = new Border
+                    {
+                        Background = new SolidColorBrush(Color.FromArgb(150, 0, 25, 50)),
+                        CornerRadius = new CornerRadius(8),
+                        Padding = new Thickness(10, 6, 10, 6),
+                        Margin = new Thickness(0, 0, 15, 0)
+                    };
+                    StackPanel replacedPanel = new StackPanel { Orientation = Orientation.Horizontal };
+                    replacedPanel.Children.Add(new TextBlock
+                    {
+                        Text = "Replaced: ",
+                        Foreground = new SolidColorBrush(Color.FromRgb(220, 220, 220)),
+                        FontSize = 13,
+                        VerticalAlignment = VerticalAlignment.Center
+                    });
+                    replacedPanel.Children.Add(new TextBlock
+                    {
+                        Text = replacedEntries.ToString(),
+                        Foreground = new SolidColorBrush(Color.FromRgb(150, 200, 255)),
+                        FontWeight = FontWeights.SemiBold,
+                        FontSize = 13,
+                        VerticalAlignment = VerticalAlignment.Center
+                    });
+                    replacedBadge.Child = replacedPanel;
+                    badgesPanel.Children.Add(replacedBadge);
+                }
+
+                // Skipped entries badge with orange background
+                if (skippedEntries > 0)
+                {
+                    Border skippedBadge = new Border
+                    {
+                        Background = new SolidColorBrush(Color.FromArgb(150, 75, 50, 0)),
+                        CornerRadius = new CornerRadius(8),
+                        Padding = new Thickness(10, 6, 10, 6),
+                        Margin = new Thickness(0, 0, 15, 0)
+                    };
+                    StackPanel skippedPanel = new StackPanel { Orientation = Orientation.Horizontal };
+                    skippedPanel.Children.Add(new TextBlock
+                    {
+                        Text = "Skipped: ",
+                        Foreground = new SolidColorBrush(Color.FromRgb(220, 220, 220)),
+                        FontSize = 13,
+                        VerticalAlignment = VerticalAlignment.Center
+                    });
+                    skippedPanel.Children.Add(new TextBlock
+                    {
+                        Text = skippedEntries.ToString(),
+                        Foreground = new SolidColorBrush(Color.FromRgb(255, 165, 0)),
+                        FontWeight = FontWeights.SemiBold,
+                        FontSize = 13,
+                        VerticalAlignment = VerticalAlignment.Center
+                    });
+                    skippedBadge.Child = skippedPanel;
+                    badgesPanel.Children.Add(skippedBadge);
+                }
+
+                statsPanelBackground.Child = badgesPanel;
+                Grid.SetRow(statsPanelBackground, 1);
+                mainGrid.Children.Add(statsPanelBackground);
+
+                // Message content area - matching existing dialogs
+                Border messageContainer = new Border
+                {
+                    Margin = new Thickness(20, 20, 20, 0),
+                    Background = new SolidColorBrush(Color.FromRgb(30, 30, 33)),
+                    BorderThickness = new Thickness(1),
+                    BorderBrush = new SolidColorBrush(Color.FromRgb(70, 70, 75)),
+                    CornerRadius = new CornerRadius(4),
+                    Padding = new Thickness(15),
+                    Effect = new DropShadowEffect
+                    {
+                        BlurRadius = 10,
+                        ShadowDepth = 2,
+                        Direction = 315,
+                        Color = Colors.Black,
+                        Opacity = 0.4
+                    }
+                };
+
+                TextBlock messageText = new TextBlock
+                {
+                    Text = message,
+                    Foreground = Brushes.White,
+                    FontSize = 14,
+                    TextWrapping = TextWrapping.Wrap,
+                    LineHeight = 20,
+                    FontFamily = new FontFamily("Segoe UI, Microsoft YaHei UI, Arial Unicode MS, MS Gothic")
+                };
+
+                // Apply optimal text rendering settings - matching existing dialogs
+                TextOptions.SetTextFormattingMode(messageText, TextFormattingMode.Ideal);
+                TextOptions.SetTextRenderingMode(messageText, TextRenderingMode.ClearType);
+                TextOptions.SetTextHintingMode(messageText, TextHintingMode.Auto);
+
+                messageContainer.Child = messageText;
+                Grid.SetRow(messageContainer, 2);
+                mainGrid.Children.Add(messageContainer);
+
+                // Button panel with modern design - matching existing dialogs
+                Grid buttonPanel = new Grid
+                {
+                    Margin = new Thickness(20, 20, 20, 20)
+                };
+
+                buttonPanel.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+                buttonPanel.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+
+                // Create OK button - matching existing dialogs
+                Button okButton = CreateButton("OK", true);
+                okButton.Click += (s, e) => DialogResult = true;
+                Grid.SetColumn(okButton, 1);
+                buttonPanel.Children.Add(okButton);
+
+                Grid.SetRow(buttonPanel, 3);
+                mainGrid.Children.Add(buttonPanel);
+
+                mainBorder.Child = mainGrid;
+                Content = mainBorder;
+            }
+
+            /// <summary>
+            /// Creates a modern button with hover and pressed states - SAME as existing dialogs
+            /// </summary>
+            private Button CreateButton(string content, bool isPrimary)
+            {
+                var button = new Button
+                {
+                    Content = content,
+                    Width = 100,
+                    Height = 36,
+                    FontSize = 13,
+                    FontWeight = FontWeights.Medium,
+                    BorderThickness = new Thickness(0)
+                };
+
+                Color bgColor = isPrimary ? Color.FromRgb(0, 170, 70) : Color.FromRgb(60, 60, 65);
+                button.Background = new SolidColorBrush(bgColor);
+                button.Foreground = Brushes.White;
+
+                return button;
+            }
+
+            /// <summary>
+            /// Creates a modern button template - SAME as existing dialogs
+            /// </summary>
+            private ControlTemplate CreateButtonTemplate()
+            {
+                ControlTemplate template = new ControlTemplate(typeof(Button));
+
+                FrameworkElementFactory borderFactory = new FrameworkElementFactory(typeof(Border));
+                borderFactory.SetValue(Border.BackgroundProperty, new TemplateBindingExtension(Button.BackgroundProperty));
+                borderFactory.SetValue(Border.BorderBrushProperty, new TemplateBindingExtension(Button.BorderBrushProperty));
+                borderFactory.SetValue(Border.BorderThicknessProperty, new TemplateBindingExtension(Button.BorderThicknessProperty));
+                borderFactory.SetValue(Border.CornerRadiusProperty, new CornerRadius(4));
+
+                // Add subtle shadow to button - SAME as existing dialogs
+                DropShadowEffect buttonShadow = new DropShadowEffect
+                {
+                    BlurRadius = 5,
+                    ShadowDepth = 1,
+                    Direction = 315,
+                    Color = Colors.Black,
+                    Opacity = 0.3
+                };
+                borderFactory.SetValue(Border.EffectProperty, buttonShadow);
+
+                FrameworkElementFactory contentPresenterFactory = new FrameworkElementFactory(typeof(ContentPresenter));
+                contentPresenterFactory.SetValue(ContentPresenter.HorizontalAlignmentProperty, HorizontalAlignment.Center);
+                contentPresenterFactory.SetValue(ContentPresenter.VerticalAlignmentProperty, VerticalAlignment.Center);
+                contentPresenterFactory.SetValue(ContentPresenter.MarginProperty, new Thickness(2));
+
+                borderFactory.AppendChild(contentPresenterFactory);
+                template.VisualTree = borderFactory;
+
+                return template;
+            }
+        }
+
+        // Dialog for applying resolution to all conflicts
+        public class ApplyToAllDialog : Window
+        {
+            public ConflictResolution SelectedResolution { get; private set; }
+            public uint HashIdOffset { get; private set; } = 1000000;
+
+            public ApplyToAllDialog()
+            {
+                Title = "Apply to All Conflicts";
+                Width = 400;
+                Height = 300;
+                WindowStartupLocation = WindowStartupLocation.CenterOwner;
+                Background = new SolidColorBrush(Color.FromRgb(45, 45, 48));
+
+                var stackPanel = new StackPanel { Margin = new Thickness(20) };
+
+                stackPanel.Children.Add(new TextBlock
+                {
+                    Text = "Choose resolution for all conflicts:",
+                    Foreground = Brushes.White,
+                    FontSize = 14,
+                    FontWeight = FontWeights.SemiBold,
+                    Margin = new Thickness(0, 0, 0, 15)
+                });
+
+                var skipRadio = new RadioButton
+                {
+                    Content = "Skip all conflicts",
+                    GroupName = "applyAll",
+                    Foreground = Brushes.White,
+                    IsChecked = true,
+                    Margin = new Thickness(0, 5, 0, 5)
+                };
+
+                var replaceRadio = new RadioButton
+                {
+                    Content = "Replace all existing entries",
+                    GroupName = "applyAll",
+                    Foreground = Brushes.White,
+                    Margin = new Thickness(0, 5, 0, 5)
+                };
+
+                var newHashRadio = new RadioButton
+                {
+                    Content = "Generate new Hash IDs with offset:",
+                    GroupName = "applyAll",
+                    Foreground = Brushes.White,
+                    Margin = new Thickness(0, 5, 0, 5)
+                };
+
+                var offsetTextBox = new TextBox
+                {
+                    Text = HashIdOffset.ToString(),
+                    Width = 150,
+                    Height = 30,
+                    Background = new SolidColorBrush(Color.FromRgb(30, 30, 30)),
+                    Foreground = Brushes.White,
+                    BorderThickness = new Thickness(1),
+                    BorderBrush = new SolidColorBrush(Color.FromRgb(70, 70, 75)),
+                    Margin = new Thickness(20, 5, 0, 15),
+                    IsEnabled = false
+                };
+
+                newHashRadio.Checked += (s, e) => offsetTextBox.IsEnabled = true;
+                skipRadio.Checked += (s, e) => offsetTextBox.IsEnabled = false;
+                replaceRadio.Checked += (s, e) => offsetTextBox.IsEnabled = false;
+
+                offsetTextBox.TextChanged += (s, e) => {
+                    if (uint.TryParse(offsetTextBox.Text, out uint offset))
+                    {
+                        HashIdOffset = offset;
+                    }
+                };
+
+                stackPanel.Children.Add(skipRadio);
+                stackPanel.Children.Add(replaceRadio);
+                stackPanel.Children.Add(newHashRadio);
+                stackPanel.Children.Add(offsetTextBox);
+
+                var buttonPanel = new StackPanel
+                {
+                    Orientation = Orientation.Horizontal,
+                    HorizontalAlignment = HorizontalAlignment.Right,
+                    Margin = new Thickness(0, 20, 0, 0)
+                };
+
+                var cancelButton = new Button
+                {
+                    Content = "Cancel",
+                    Width = 80,
+                    Height = 30,
+                    Margin = new Thickness(0, 0, 10, 0),
+                    Background = new SolidColorBrush(Color.FromRgb(60, 60, 65)),
+                    Foreground = Brushes.White,
+                    BorderThickness = new Thickness(0)
+                };
+                cancelButton.Click += (s, e) => DialogResult = false;
+
+                var okButton = new Button
+                {
+                    Content = "Apply",
+                    Width = 80,
+                    Height = 30,
+                    Background = new SolidColorBrush(Color.FromRgb(0, 170, 70)),
+                    Foreground = Brushes.White,
+                    BorderThickness = new Thickness(0)
+                };
+                okButton.Click += (s, e) => {
+                    if (skipRadio.IsChecked == true)
+                        SelectedResolution = ConflictResolution.Skip;
+                    else if (replaceRadio.IsChecked == true)
+                        SelectedResolution = ConflictResolution.Replace;
+                    else if (newHashRadio.IsChecked == true)
+                        SelectedResolution = ConflictResolution.UseNewHashId;
+
+                    DialogResult = true;
+                };
+
+                buttonPanel.Children.Add(cancelButton);
+                buttonPanel.Children.Add(okButton);
+                stackPanel.Children.Add(buttonPanel);
+
+                Content = stackPanel;
+            }
+        }
+
+        private void ClearSharelist_Click(object sender, RoutedEventArgs e)
+        {
+            if (SharelistManager.Instance.Entries.Count == 0)
+                return;
+
+            var result = MessageBox.Show($"Are you sure you want to clear all {SharelistManager.Instance.Entries.Count} entries from the sharelist?",
+                                        "Clear Sharelist",
+                                        MessageBoxButton.YesNo,
+                                        MessageBoxImage.Question);
+
+            if (result == MessageBoxResult.Yes)
+            {
+                SharelistManager.Instance.Clear();
+                UpdateStatus("Sharelist cleared");
+            }
+        }
+
+        #endregion
+
+
         /// <summary>
         /// Enhanced virtualization for DataGrid with better compatibility
         /// </summary>
@@ -1467,7 +3042,7 @@ namespace SDBEditor
 
                 // These are standard DataGrid properties that should work in most versions
                 StringsDataGrid.RowDetailsVisibilityMode = DataGridRowDetailsVisibilityMode.VisibleWhenSelected;
-                StringsDataGrid.SelectionMode = DataGridSelectionMode.Single;
+                StringsDataGrid.SelectionMode = DataGridSelectionMode.Extended;
                 StringsDataGrid.SelectionUnit = DataGridSelectionUnit.FullRow;
 
                 // Set default row height for performance
@@ -1902,94 +3477,151 @@ namespace SDBEditor
                 Mouse.OverrideCursor = Cursors.Wait;
                 UpdateStatus("Loading file...");
 
-                // Clear SDBCacheManager caches for the previous file if different
-                if (!string.IsNullOrEmpty(_currentFile) && _currentFile != filePath)
+                // IMPORTANT: Check if we're reloading the same file
+                bool isReloadingSameFile = !string.IsNullOrEmpty(_currentFile) && _currentFile == filePath;
+
+                // Clear caches - ALWAYS clear if reloading the same file to ensure fresh data
+                if (!string.IsNullOrEmpty(_currentFile))
                 {
                     SDBCacheManager.Instance.ClearCache(_currentFile);
+
+                    // Also clear search and view model caches when reloading
+                    if (isReloadingSameFile)
+                    {
+                        SDBCacheManager.Instance.ClearSearchCache();
+                        SDBCacheManager.Instance.ClearViewModelCache();
+                        Console.WriteLine($"Forcing cache refresh for same file: {filePath}");
+                    }
                 }
 
                 try
                 {
-                    // Check if we have cached parsed entries first (fastest)
-                    var cachedParsedEntries = SDBCacheManager.Instance.GetCachedParsedEntries(filePath);
-
-                    if (cachedParsedEntries != null)
+                    // For same file reload, always load from disk to get proper order
+                    if (isReloadingSameFile)
                     {
-                        // Use the cached data directly
-                        _sdbHandler.SetStrings(cachedParsedEntries);
+                        // Force load from disk to ensure proper ordering
+                        byte[] fileData = File.ReadAllBytes(filePath);
 
-                        // Update file info
-                        _currentFile = filePath;
+                        // Cache the raw file data
+                        SDBCacheManager.Instance.CacheRawFile(filePath, fileData);
 
-                        // Update UI info
-                        UpdateGameInfo();
+                        if (_sdbHandler.LoadSDB(filePath))
+                        {
+                            // Cache the parsed entries after loading
+                            SDBCacheManager.Instance.CacheParsedEntries(filePath, _sdbHandler.GetAllStrings());
 
-                        // Display strings - will use cached data
-                        DisplayStrings();
-                        UpdateStatus($"Loaded from cache: {FormatPathForDisplay(filePath)}");
+                            // Update file info
+                            _currentFile = filePath;
+                            SaveLastFile(filePath);
+
+                            // FIX UNKNOWN LANGUAGE HERE
+                            FixUnknownLanguage();
+
+                            // Update UI info
+                            UpdateGameInfo();
+
+                            // Display strings - will show properly ordered data
+                            DisplayStrings();
+                            UpdateStatus($"Reloaded: {FormatPathForDisplay(filePath)}");
+                        }
+                        else
+                        {
+                            throw new Exception("Failed to reload SDB file");
+                        }
                     }
                     else
                     {
-                        // Check for cached raw file data
-                        var cachedRawData = SDBCacheManager.Instance.GetCachedRawFile(filePath);
+                        // Different file - use normal caching logic
+                        // Check if we have cached parsed entries first (fastest)
+                        var cachedParsedEntries = SDBCacheManager.Instance.GetCachedParsedEntries(filePath);
 
-                        if (cachedRawData != null)
+                        if (cachedParsedEntries != null)
                         {
-                            // Create a memory stream from cached data
-                            using (MemoryStream ms = new MemoryStream(cachedRawData))
+                            // Use the cached data directly
+                            _sdbHandler.SetStrings(cachedParsedEntries);
+
+                            // Update file info
+                            _currentFile = filePath;
+
+                            // FIX UNKNOWN LANGUAGE HERE
+                            FixUnknownLanguage();
+
+                            // Update UI info
+                            UpdateGameInfo();
+
+                            // Display strings - will use cached data
+                            DisplayStrings();
+                            UpdateStatus($"Loaded from cache: {FormatPathForDisplay(filePath)}");
+                        }
+                        else
+                        {
+                            // Check for cached raw file data
+                            var cachedRawData = SDBCacheManager.Instance.GetCachedRawFile(filePath);
+
+                            if (cachedRawData != null)
                             {
-                                if (_sdbHandler.LoadSDBFromStream(ms))
+                                // Create a memory stream from cached data
+                                using (MemoryStream ms = new MemoryStream(cachedRawData))
                                 {
-                                    // Cache the parsed entries for future use
+                                    if (_sdbHandler.LoadSDBFromStream(ms))
+                                    {
+                                        // Cache the parsed entries for future use
+                                        SDBCacheManager.Instance.CacheParsedEntries(filePath, _sdbHandler.GetAllStrings());
+
+                                        // Update file info
+                                        _currentFile = filePath;
+                                        SaveLastFile(filePath);
+
+                                        // FIX UNKNOWN LANGUAGE HERE
+                                        FixUnknownLanguage();
+
+                                        // Update UI info
+                                        UpdateGameInfo();
+
+                                        // Display strings - will use cached data
+                                        DisplayStrings();
+                                        UpdateStatus($"Loaded from cache: {FormatPathForDisplay(filePath)}");
+                                    }
+                                    else
+                                    {
+                                        throw new Exception("Failed to load SDB from cached data");
+                                    }
+                                }
+                            }
+                            else
+                            {
+                                // No cache available, load from disk and cache for future use
+                                byte[] fileData = File.ReadAllBytes(filePath);
+
+                                // Cache the raw file data
+                                SDBCacheManager.Instance.CacheRawFile(filePath, fileData);
+
+                                if (_sdbHandler.LoadSDB(filePath))
+                                {
+                                    // Cache the parsed entries after loading
                                     SDBCacheManager.Instance.CacheParsedEntries(filePath, _sdbHandler.GetAllStrings());
+
+                                    // Create backup
+                                    _backupHandler.CreateBackup(filePath, "auto_backup");
 
                                     // Update file info
                                     _currentFile = filePath;
                                     SaveLastFile(filePath);
+
+                                    // FIX UNKNOWN LANGUAGE HERE
+                                    FixUnknownLanguage();
 
                                     // Update UI info
                                     UpdateGameInfo();
 
                                     // Display strings - will use cached data
                                     DisplayStrings();
-                                    UpdateStatus($"Loaded from cache: {FormatPathForDisplay(filePath)}");
+                                    UpdateStatus($"Successfully Loaded: {FormatPathForDisplay(filePath)}");
                                 }
                                 else
                                 {
-                                    throw new Exception("Failed to load SDB from cached data");
+                                    throw new Exception("Failed to load SDB file");
                                 }
-                            }
-                        }
-                        else
-                        {
-                            // No cache available, load from disk and cache for future use
-                            byte[] fileData = File.ReadAllBytes(filePath);
-
-                            // Cache the raw file data
-                            SDBCacheManager.Instance.CacheRawFile(filePath, fileData);
-
-                            if (_sdbHandler.LoadSDB(filePath))
-                            {
-                                // Cache the parsed entries after loading
-                                SDBCacheManager.Instance.CacheParsedEntries(filePath, _sdbHandler.GetAllStrings());
-
-                                // Create backup
-                                _backupHandler.CreateBackup(filePath, "auto_backup");
-
-                                // Update file info
-                                _currentFile = filePath;
-                                SaveLastFile(filePath);
-
-                                // Update UI info
-                                UpdateGameInfo();
-
-                                // Display strings - will use cached data
-                                DisplayStrings();
-                                UpdateStatus($"Successfully Loaded: {FormatPathForDisplay(filePath)}");
-                            }
-                            else
-                            {
-                                throw new Exception("Failed to load SDB file");
                             }
                         }
                     }
@@ -2022,13 +3654,12 @@ namespace SDBEditor
             // Extract version from game name
             if (!string.IsNullOrEmpty(gameName))
             {
-                if (gameName.Contains("2K25")) gameVersion = "25";  // Added WWE 2K25 support
+                if (gameName.Contains("2K25")) gameVersion = "25";
                 else if (gameName.Contains("2K24")) gameVersion = "24";
                 else if (gameName.Contains("2K23")) gameVersion = "23";
                 else if (gameName.Contains("2K22")) gameVersion = "22";
                 else if (gameName.Contains("2K20")) gameVersion = "20";
                 else if (gameName.Contains("2K19")) gameVersion = "19";
-                // Extract any other versions
                 else
                 {
                     var versionMatch = System.Text.RegularExpressions.Regex.Match(gameName, @"2K(\d+)");
@@ -2040,13 +3671,16 @@ namespace SDBEditor
             }
 
             // Update UI elements with new info
-            GameVersionText.Text = $"Official Game Title: WWE2K{gameVersion}";
+            GameVersionText.Text = $"Official Game Title: WWE 2K{gameVersion}";
+
+            // ADD THIS LINE HERE - FIX UNKNOWN LANGUAGE
+            FixUnknownLanguage();
 
             // Force check mangled status from handler
             bool isActuallyMangled = _sdbHandler.IsMangled;
 
             // Ensure we display accurate information
-            GameExtraInfoText.Text = $", Language: {_sdbHandler.Language}, Mangled: {isActuallyMangled}";
+            GameExtraInfoText.Text = $", Language: {_sdbHandler.Language}";
 
             // Log the status for debugging
             Console.WriteLine($"UpdateGameInfo: Mangled status is {isActuallyMangled}, Language is {_sdbHandler.Language}");
@@ -2091,13 +3725,34 @@ namespace SDBEditor
                 // Save using SDBHandler
                 if (_sdbHandler.SaveSDB(filePath))
                 {
-                    // Update caches - this is now handled directly in SDBHandler.SaveSDB
+                    // Update current file path
                     _currentFile = filePath;
                     SaveLastFile(filePath);
-                    UpdateStatus($"Saved and cached: {FormatPathForDisplay(filePath)}");
-                }
 
-                Mouse.OverrideCursor = null;
+                    // Clear caches to ensure fresh data
+                    SDBCacheManager.Instance.ClearCache(filePath);
+                    SDBCacheManager.Instance.ClearSearchCache();
+                    SDBCacheManager.Instance.ClearViewModelCache();
+
+                    UpdateStatus($"Saved: {FormatPathForDisplay(filePath)}");
+
+                    // AUTOMATIC REFRESH: Reload the file to show proper ordering
+                    Mouse.OverrideCursor = null; // Reset cursor before reload
+
+                    // Show refresh status
+                    UpdateStatus("Refreshing display...");
+
+                    // Reload the file to get proper string ordering
+                    LoadSdbFile(filePath);
+
+                    // Update status to show save and refresh complete
+                    UpdateStatus($"Saved and refreshed: {FormatPathForDisplay(filePath)}");
+                }
+                else
+                {
+                    Mouse.OverrideCursor = null;
+                    MessageBox.Show("Failed to save file.", "Save Error", MessageBoxButton.OK, MessageBoxImage.Error);
+                }
             }
             catch (Exception ex)
             {
@@ -2120,7 +3775,7 @@ namespace SDBEditor
                 // Create a folder browser dialog
                 var folderDialog = new System.Windows.Forms.FolderBrowserDialog
                 {
-                    Description = "Select Tribute or Baked Directory",
+                    Description = "Select Baked Directory",
                     ShowNewFolderButton = true
                 };
 
@@ -2156,17 +3811,33 @@ namespace SDBEditor
 
                     Mouse.OverrideCursor = Cursors.Wait;
 
-                    // Save using SDBHandler - caching is now handled inside SaveSDB
+                    // Save using SDBHandler
                     if (_sdbHandler.SaveSDB(sdbFile))
                     {
+                        // Clear caches
+                        SDBCacheManager.Instance.ClearCache(sdbFile);
+                        SDBCacheManager.Instance.ClearSearchCache();
+                        SDBCacheManager.Instance.ClearViewModelCache();
+
                         UpdateStatus($"Auto-saved to: {FormatPathForDisplay(sdbFile)}");
+
+                        // AUTOMATIC REFRESH: If we saved to the current file, reload it
+                        if (sdbFile == _currentFile)
+                        {
+                            Mouse.OverrideCursor = null;
+                            UpdateStatus("Refreshing display...");
+                            LoadSdbFile(sdbFile);
+                            UpdateStatus($"Auto-saved and refreshed: {FormatPathForDisplay(sdbFile)}");
+                        }
+                        else
+                        {
+                            Mouse.OverrideCursor = null;
+                        }
                     }
                     else
                     {
                         throw new Exception("Failed to save SDB file");
                     }
-
-                    Mouse.OverrideCursor = null;
                 }
             }
             catch (Exception ex)
@@ -2234,9 +3905,11 @@ namespace SDBEditor
         #region Display Strings
 
         // Modified DisplayStrings method with optimized caching
-        private void DisplayStrings()
+        private async void DisplayStrings()
         {
             Mouse.OverrideCursor = Cursors.Wait;
+            UpdateStatus("Loading strings...");
+
             try
             {
                 // Check if a file has been loaded
@@ -2255,28 +3928,34 @@ namespace SDBEditor
                 _initialAnimationPlayed = false;
                 _lastSearchQuery = string.Empty;
 
-                // Get strings from cache if available first
-                List<StringEntry> strings = SDBCacheManager.Instance.GetCachedParsedEntries(_currentFile);
+                // Get strings - use Task.Run to avoid blocking UI
+                List<StringEntry> strings = null;
 
-                // If not in cache, get from handler (which will also try to use cache)
-                if (strings == null)
-                {
-                    strings = _sdbHandler.GetAllStrings() ?? new List<StringEntry>();
+                await Task.Run(() => {
+                    // Get from cache if available first
+                    strings = SDBCacheManager.Instance.GetCachedParsedEntries(_currentFile);
 
-                    // Cache for future use if not already cached
-                    if (strings.Count > 0)
+                    // If not in cache, get from handler (which will also try to use cache)
+                    if (strings == null)
                     {
-                        SDBCacheManager.Instance.CacheParsedEntries(_currentFile, strings);
-                    }
-                }
+                        strings = _sdbHandler.GetAllStrings() ?? new List<StringEntry>();
 
-                // Update collection with performance optimizations
+                        // Cache for future use if not already cached
+                        if (strings.Count > 0)
+                        {
+                            SDBCacheManager.Instance.CacheParsedEntries(_currentFile, strings);
+                        }
+                    }
+                });
+
+                // Update collection with async implementation
+                await Task.Yield(); // Ensure UI responsiveness
                 PopulateStringCollection(strings);
 
                 // Reset scrolling behavior to prevent glitches
                 ResetScrollViewer();
 
-                UpdateStatus($"Loaded {strings.Count} strings from cache");
+                UpdateStatus($"Loaded {strings.Count} strings");
             }
             catch (Exception ex)
             {
@@ -2289,7 +3968,7 @@ namespace SDBEditor
         }
 
         // Improved PopulateStringCollection method with memory optimization
-        private void PopulateStringCollection(List<StringEntry> strings)
+        private async void PopulateStringCollection(List<StringEntry> strings)
         {
             if (_stringsCollection == null)
             {
@@ -2304,108 +3983,125 @@ namespace SDBEditor
             object selectedItem = StringsDataGrid.SelectedItem;
             string selectedHashId = (selectedItem as StringEntryViewModel)?.HashId.ToString();
 
-            // Disable UI updates during manipulation
-            StringsDataGrid.BeginInit();
+            // Show loading indicator
+            UpdateStatus("Loading strings...");
+            Mouse.OverrideCursor = Cursors.Wait;
 
             try
             {
-                // Clear the collection - do this inside a try/catch to prevent crashes
-                try
-                {
-                    _stringsCollection.Clear();
-                }
-                catch (Exception ex)
-                {
-                    Console.WriteLine($"Error clearing collection: {ex.Message}");
-                    // Try to recreate the collection if clearing failed
-                    _stringsCollection = new ObservableCollection<StringEntryViewModel>();
-                    StringsDataGrid.ItemsSource = _stringsCollection;
-                }
+                // Load data on background thread to prevent UI freezing
+                await Task.Run(() => {
+                    // Process data in background
+                    var viewModels = new List<StringEntryViewModel>(strings.Count);
 
-                // For large collections, use chunking to improve performance
-                if (strings.Count > 1000)
-                {
-                    // Load in smaller chunks to avoid UI freezing
-                    int initialChunkSize = 300; // Reduced from 500 to prevent memory pressure
-                    LoadInitialChunk(strings, initialChunkSize);
+                    // Process in batches for large collections
+                    const int batchSize = 100;
 
-                    // Schedule loading of remaining items
-                    ScheduleRemainingItemsLoad(strings, initialChunkSize);
-                }
-                else
-                {
-                    // For smaller collections, load everything at once with error handling
-                    for (int i = 0; i < strings.Count; i++)
+                    for (int i = 0; i < strings.Count; i += batchSize)
                     {
+                        var batch = strings.Skip(i).Take(batchSize);
+                        foreach (var entry in batch)
+                        {
+                            if (entry == null) continue;
+
+                            // Check view model cache first - avoid UI thread access
+                            var cachedViewModel = SDBCacheManager.Instance.GetCachedViewModel(entry.HashId);
+
+                            StringEntryViewModel viewModel;
+                            if (cachedViewModel != null)
+                            {
+                                viewModel = cachedViewModel;
+                                viewModel.Index = i;
+                            }
+                            else
+                            {
+                                viewModel = new StringEntryViewModel(entry);
+                                viewModel.Index = i;
+                                SDBCacheManager.Instance.CacheViewModel(entry.HashId, viewModel);
+                            }
+
+                            viewModels.Add(viewModel);
+                        }
+                    }
+
+                    // Update UI on the UI thread
+                    Dispatcher.Invoke(() => {
                         try
                         {
-                            var entry = strings[i];
-                            if (entry != null)
+                            // Disable UI updates during manipulation
+                            StringsDataGrid.BeginInit();
+
+                            // Clear collection safely
+                            try
                             {
-                                // Check view model cache first
-                                var cachedViewModel = SDBCacheManager.Instance.GetCachedViewModel(entry.HashId);
+                                _stringsCollection.Clear();
+                            }
+                            catch (Exception ex)
+                            {
+                                Console.WriteLine($"Error clearing collection: {ex.Message}");
+                                _stringsCollection = new ObservableCollection<StringEntryViewModel>();
+                                StringsDataGrid.ItemsSource = _stringsCollection;
+                            }
 
-                                if (cachedViewModel != null)
+                            // Add items in batches to maintain UI responsiveness
+                            for (int i = 0; i < viewModels.Count; i += 500)
+                            {
+                                var displayBatch = viewModels.Skip(i).Take(500);
+                                foreach (var vm in displayBatch)
                                 {
-                                    // Update the index which might have changed
-                                    cachedViewModel.Index = i;
-                                    _stringsCollection.Add(cachedViewModel);
+                                    _stringsCollection.Add(vm);
                                 }
-                                else
+
+                                // Force UI update every 500 items
+                                if (i + 500 < viewModels.Count)
                                 {
-                                    // Create new view model
-                                    var viewModel = new StringEntryViewModel(entry);
-                                    viewModel.Index = i;
+                                    // Allow UI to process events
+                                    Dispatcher.Yield(DispatcherPriority.Background);
+                                }
+                            }
 
-                                    // Cache the view model
-                                    SDBCacheManager.Instance.CacheViewModel(entry.HashId, viewModel);
-
-                                    _stringsCollection.Add(viewModel);
+                            // Restore selection if possible
+                            if (!string.IsNullOrEmpty(selectedHashId))
+                            {
+                                try
+                                {
+                                    RestoreSelection(selectedHashId);
+                                }
+                                catch (Exception ex)
+                                {
+                                    Console.WriteLine($"Error restoring selection: {ex.Message}");
                                 }
                             }
                         }
-                        catch (Exception ex)
+                        finally
                         {
-                            Console.WriteLine($"Error adding item {i}: {ex.Message}");
-                            // Continue with next item rather than crashing
+                            // Re-enable UI updates
+                            StringsDataGrid.EndInit();
+
+                            // Force a complete refresh
+                            ForceDataGridRefresh();
+
+                            // Apply animation only on initial load
+                            if (!_initialAnimationPlayed)
+                            {
+                                ApplyLoadAnimation();
+                                _initialAnimationPlayed = true;
+                            }
                         }
-                    }
-                }
-
-                // Restore selection if possible
-                if (!string.IsNullOrEmpty(selectedHashId))
-                {
-                    try
-                    {
-                        RestoreSelection(selectedHashId);
-                    }
-                    catch (Exception ex)
-                    {
-                        Console.WriteLine($"Error restoring selection: {ex.Message}");
-                    }
-                }
-
-                // Force a complete refresh of the DataGrid to ensure proper display
-                ForceDataGridRefresh();
+                    });
+                });
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Error in PopulateStringCollection: {ex.Message}");
+                UpdateStatus($"Error loading strings: {ex.Message}");
             }
             finally
             {
-                // Re-enable UI updates
-                StringsDataGrid.EndInit();
+                // Always reset cursor
+                Mouse.OverrideCursor = null;
+                UpdateStatus($"Loaded {_stringsCollection.Count} strings");
             }
-
-            // Only apply animation on initial load, not during search
-            if (!_initialAnimationPlayed)
-            {
-                Dispatcher.BeginInvoke(new Action(() =>
-                {
-                    ApplyLoadAnimation();
-                    _initialAnimationPlayed = true;
-                }), DispatcherPriority.Loaded);
-            }
-
-            // Adjust row heights for multi-line content
-            AdjustRowHeightsForMultilineContent();
         }
 
         /// <summary>
@@ -2721,10 +4417,32 @@ namespace SDBEditor
                 return;
             }
 
-            // Check if the file has been modified externally
-            RefreshCacheIfNeeded();
+            // Force complete reload from disk
+            LoadSdbFile(_currentFile);
+        }
 
-            DisplayStrings();
+        private void RefreshDataGridDisplay()
+        {
+            Mouse.OverrideCursor = Cursors.Wait;
+            try
+            {
+                // Force the DataGrid to refresh its display
+                var temp = StringsDataGrid.ItemsSource;
+                StringsDataGrid.ItemsSource = null;
+                StringsDataGrid.ItemsSource = temp;
+
+                // Force all items to refresh
+                StringsDataGrid.Items.Refresh();
+
+                // Update layout
+                StringsDataGrid.UpdateLayout();
+
+                UpdateStatus("Display refreshed");
+            }
+            finally
+            {
+                Mouse.OverrideCursor = null;
+            }
         }
 
         /// <summary>
@@ -2951,6 +4669,7 @@ namespace SDBEditor
         {
             // Enable or disable menu items based on selection
             bool hasSelection = StringsDataGrid?.SelectedItem != null;
+            bool hasMultipleSelection = StringsDataGrid?.SelectedItems?.Count > 1;
 
             // Check if context menu exists
             if (StringsDataGrid?.ContextMenu == null)
@@ -2964,6 +4683,29 @@ namespace SDBEditor
                 if (item is MenuItem menuItem)
                 {
                     menuItem.IsEnabled = hasSelection;
+
+                    // Update the Copy Hash ID menu item
+                    if (menuItem.Name == "CopyHashMenuItem")
+                    {
+                        if (hasMultipleSelection)
+                        {
+                            menuItem.Header = $"Copy {StringsDataGrid.SelectedItems.Count} Hash IDs";
+                            // Try to update icon if possible
+                            if (menuItem.Icon is TextBlock iconTextBlock)
+                            {
+                                iconTextBlock.Text = "\uE8F4"; // Multiple pages icon
+                            }
+                        }
+                        else
+                        {
+                            menuItem.Header = "Copy Hash ID";
+                            // Reset icon
+                            if (menuItem.Icon is TextBlock iconTextBlock)
+                            {
+                                iconTextBlock.Text = "\uE8C8"; // Single page icon
+                            }
+                        }
+                    }
                 }
             }
         }
@@ -2978,60 +4720,278 @@ namespace SDBEditor
             DeleteSelectedString();
         }
 
-        private void CopyIndexMenuItem_Click(object sender, RoutedEventArgs e)
-        {
-            if (StringsDataGrid?.SelectedItem is StringEntryViewModel selectedItem)
-            {
-                Clipboard.SetText(selectedItem.Index.ToString());
-                UpdateStatus("Index copied to clipboard");
-            }
-        }
-
         private void CopyHashMenuItem_Click(object sender, RoutedEventArgs e)
         {
-            if (StringsDataGrid?.SelectedItem is StringEntryViewModel selectedItem)
+            try
             {
-                Clipboard.SetText(selectedItem.HashId.ToString());
-                UpdateStatus("Hash ID copied to clipboard");
+                if (StringsDataGrid?.SelectedItems != null && StringsDataGrid.SelectedItems.Count > 1)
+                {
+                    // Multiple selection - copy all with commas
+                    var hashIds = new List<string>();
+
+                    foreach (var item in StringsDataGrid.SelectedItems)
+                    {
+                        if (item is StringEntryViewModel selectedItem)
+                        {
+                            hashIds.Add(selectedItem.HashId.ToString());
+                        }
+                    }
+
+                    if (hashIds.Count > 0)
+                    {
+                        string hashIdList = string.Join(", ", hashIds);
+                        bool success = ClipboardManager.SafeCopy(hashIdList);
+
+                        if (success)
+                        {
+                            UpdateStatus($"Copied {hashIds.Count} hash IDs to clipboard");
+                        }
+                        else
+                        {
+                            Dispatcher.BeginInvoke(new Action(async () =>
+                            {
+                                await Task.Delay(100);
+                                bool retrySuccess = await ClipboardManager.SafeCopyAsync(hashIdList);
+                                UpdateStatus(retrySuccess
+                                    ? $"Copied {hashIds.Count} hash IDs to clipboard"
+                                    : "Failed to copy hash IDs - clipboard may be in use");
+                            }));
+                        }
+                    }
+                }
+                else if (StringsDataGrid?.SelectedItem is StringEntryViewModel selectedItem)
+                {
+                    // Single selection - existing behavior
+                    string hashText = selectedItem.HashId.ToString();
+                    bool success = ClipboardManager.SafeCopy(hashText);
+
+                    if (success)
+                    {
+                        UpdateStatus($"Hash ID {hashText} copied to clipboard");
+                        FlashCopiedText(selectedItem);
+                    }
+                    else
+                    {
+                        Dispatcher.BeginInvoke(new Action(async () =>
+                        {
+                            await Task.Delay(100);
+                            bool retrySuccess = await ClipboardManager.SafeCopyAsync(hashText);
+                            UpdateStatus(retrySuccess
+                                ? $"Hash ID {hashText} copied to clipboard"
+                                : "Failed to copy hash ID - clipboard may be in use");
+                        }));
+                    }
+                }
+                else
+                {
+                    UpdateStatus("No item selected to copy hash ID");
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Error in copy hash operation: {ex.Message}");
+                UpdateStatus("Error during copy operation");
             }
         }
+
+
 
         private void CopyHexMenuItem_Click(object sender, RoutedEventArgs e)
+{
+    try
+    {
+        if (StringsDataGrid?.SelectedItem is StringEntryViewModel selectedItem)
         {
-            if (StringsDataGrid?.SelectedItem is StringEntryViewModel selectedItem)
+            string hexValue = selectedItem.HexValue;
+            bool success = ClipboardManager.SafeCopy(hexValue);
+            
+            if (success)
             {
-                Clipboard.SetText(selectedItem.HexValue);
-                UpdateStatus("Hex value copied to clipboard");
+                UpdateStatus($"Hex value {hexValue} copied to clipboard");
+                FlashCopiedText(selectedItem);
+            }
+            else
+            {
+                // Retry with a small delay
+                Dispatcher.BeginInvoke(new Action(async () => 
+                {
+                    await Task.Delay(100);
+                    bool retrySuccess = await ClipboardManager.SafeCopyAsync(hexValue);
+                    UpdateStatus(retrySuccess 
+                        ? $"Hex value {hexValue} copied to clipboard" 
+                        : "Failed to copy hex value - clipboard may be in use");
+                }));
             }
         }
-
-        private void CopyReverseHexMenuItem_Click(object sender, RoutedEventArgs e)
+        else
         {
-            if (StringsDataGrid?.SelectedItem is StringEntryViewModel selectedItem)
+            UpdateStatus("No item selected to copy hex value");
+        }
+    }
+    catch (Exception ex)
+    {
+        Console.WriteLine($"Error in copy hex operation: {ex.Message}");
+        UpdateStatus("Error during copy operation");
+    }
+}
+
+private void CopyReverseHexMenuItem_Click(object sender, RoutedEventArgs e)
+{
+    try
+    {
+        if (StringsDataGrid?.SelectedItem is StringEntryViewModel selectedItem)
+        {
+            string hexValue = selectedItem.HexValue;
+
+            // Ensure even number of characters by padding if needed
+            if (hexValue.Length % 2 != 0)
             {
-                string hexValue = selectedItem.HexValue;
+                hexValue = "0" + hexValue;
+            }
 
-                // Ensure even number of characters by padding if needed
-                if (hexValue.Length % 2 != 0)
+            // Split into byte pairs and reverse
+            List<string> bytes = new List<string>();
+            for (int i = 0; i < hexValue.Length; i += 2)
+            {
+                bytes.Add(hexValue.Substring(i, 2));
+            }
+            bytes.Reverse();
+
+            // Join back to string
+            string reversedHex = string.Join("", bytes);
+
+            bool success = ClipboardManager.SafeCopy(reversedHex);
+            
+            if (success)
+            {
+                UpdateStatus($"Reversed hex value {reversedHex} copied to clipboard");
+                FlashCopiedText(selectedItem);
+            }
+            else
+            {
+                // Retry with a small delay
+                Dispatcher.BeginInvoke(new Action(async () => 
                 {
-                    hexValue = "0" + hexValue;
-                }
-
-                // Split into byte pairs and reverse
-                List<string> bytes = new List<string>();
-                for (int i = 0; i < hexValue.Length; i += 2)
-                {
-                    bytes.Add(hexValue.Substring(i, 2));
-                }
-                bytes.Reverse();
-
-                // Join back to string
-                string reversedHex = string.Join("", bytes);
-
-                Clipboard.SetText(reversedHex);
-                UpdateStatus("Reversed hex value copied to clipboard");
+                    await Task.Delay(100);
+                    bool retrySuccess = await ClipboardManager.SafeCopyAsync(reversedHex);
+                    UpdateStatus(retrySuccess 
+                        ? $"Reversed hex value {reversedHex} copied to clipboard" 
+                        : "Failed to copy reversed hex value - clipboard may be in use");
+                }));
             }
         }
+        else
+        {
+            UpdateStatus("No item selected to copy reversed hex value");
+        }
+    }
+    catch (Exception ex)
+    {
+        Console.WriteLine($"Error in copy reversed hex operation: {ex.Message}");
+        UpdateStatus("Error during copy operation");
+    }
+}
+
+private void CopyIndexMenuItem_Click(object sender, RoutedEventArgs e)
+{
+    try
+    {
+        if (StringsDataGrid?.SelectedItem is StringEntryViewModel selectedItem)
+        {
+            string indexText = selectedItem.Index.ToString();
+            bool success = ClipboardManager.SafeCopy(indexText);
+            
+            if (success)
+            {
+                UpdateStatus($"Index {indexText} copied to clipboard");
+                FlashCopiedText(selectedItem);
+            }
+            else
+            {
+                // Retry with a small delay
+                Dispatcher.BeginInvoke(new Action(async () => 
+                {
+                    await Task.Delay(100);
+                    bool retrySuccess = await ClipboardManager.SafeCopyAsync(indexText);
+                    UpdateStatus(retrySuccess 
+                        ? $"Index {indexText} copied to clipboard" 
+                        : "Failed to copy index - clipboard may be in use");
+                }));
+            }
+        }
+        else
+        {
+            UpdateStatus("No item selected to copy index");
+        }
+    }
+    catch (Exception ex)
+    {
+        Console.WriteLine($"Error in copy index operation: {ex.Message}");
+        UpdateStatus("Error during copy operation");
+    }
+}
+
+// Add visual feedback method
+private void FlashCopiedText(StringEntryViewModel item)
+{
+    try
+    {
+        var row = (DataGridRow)StringsDataGrid.ItemContainerGenerator.ContainerFromItem(item);
+        if (row != null)
+        {
+            // Create a green flash effect
+            var flashAnimation = new System.Windows.Media.Animation.ColorAnimation(
+                Colors.Green,
+                Colors.Transparent,
+                new Duration(TimeSpan.FromMilliseconds(500)));
+                
+            // Create a brush for the animation
+            var animatedBrush = new SolidColorBrush(Colors.Transparent);
+            animatedBrush.Opacity = 0.3;
+            
+            // Apply a temporary overlay to the row
+            Border overlay = new Border
+            {
+                Background = animatedBrush,
+                IsHitTestVisible = false
+            };
+            
+            // Add the overlay
+            var presenter = FindVisualChild<ContentPresenter>(row);
+            if (presenter != null)
+            {
+                var grid = presenter.Content as Grid;
+                if (grid == null)
+                {
+                    // Create a grid to hold the original content and overlay
+                    grid = new Grid();
+                    ContentPresenter originalContent = new ContentPresenter
+                    {
+                        Content = presenter.Content
+                    };
+                    grid.Children.Add(originalContent);
+                    presenter.Content = grid;
+                }
+                
+                grid.Children.Add(overlay);
+                
+                // Start the animation
+                animatedBrush.BeginAnimation(SolidColorBrush.ColorProperty, flashAnimation);
+                
+                // Remove the overlay after animation completes
+                Dispatcher.BeginInvoke(new Action(() => {
+                    try { grid.Children.Remove(overlay); } catch { }
+                }), System.Windows.Threading.DispatcherPriority.Background, 
+                   new object[] { });
+            }
+        }
+    }
+    catch (Exception ex)
+    {
+        // Don't let animation errors affect main functionality
+        Console.WriteLine($"Animation error: {ex.Message}");
+    }
+}
 
         private void StringsDataGrid_MouseDoubleClick(object sender, MouseButtonEventArgs e)
         {
@@ -3049,8 +5009,11 @@ namespace SDBEditor
 
             if (StringsDataGrid?.SelectedItem is StringEntryViewModel selectedItem)
             {
-                // Create edit dialog
-                var editDialog = new EditStringDialog(selectedItem.Text)
+                // Create edit dialog with index and hash ID
+                var editDialog = new EditStringDialog(
+                    selectedItem.Text,
+                    selectedItem.Index,
+                    selectedItem.HashId)
                 {
                     Owner = this,
                     Title = $"Edit String (ID: {selectedItem.HashId})"
@@ -3171,6 +5134,7 @@ namespace SDBEditor
 
             if (addDialog.ShowDialog() == true)
             {
+                // Use correct property name of StringText from fixed AddStringDialog
                 string newText = addDialog.StringText;
                 uint hashId = addDialog.HashId;
 
@@ -3393,64 +5357,36 @@ namespace SDBEditor
                     return;
                 }
 
-                // Select second SDB file to merge
-                var openFileDialog = new OpenFileDialog
+                // Show enhanced merge dialog
+                var mergeDialog = new EnhancedMergeSdbDialog
                 {
-                    Filter = "SDB Files (*.sdb)|*.sdb|All Files (*.*)|*.*",
-                    Title = "Select SDB File to Merge"
+                    Owner = this
                 };
 
-                if (openFileDialog.ShowDialog() == true)
+                if (mergeDialog.ShowDialog() == true)
                 {
-                    string secondFilePath = openFileDialog.FileName;
-
-                    // Create backup before merge
-                    _backupHandler.CreateBackup(_currentFile, "pre_merge");
-
                     Mouse.OverrideCursor = Cursors.Wait;
 
-                    // Create temporary SDBHandler for the second file
-                    SDBHandler secondHandler = new SDBHandler();
-                    if (secondHandler.LoadSDB(secondFilePath))
+                    switch (mergeDialog.SelectedMode)
                     {
-                        // Count before merge
-                        int initialCount = _sdbHandler.GetAllStrings().Count;
+                        case EnhancedMergeSdbDialog.MergeMode.MergeAll:
+                            MergeAllFromSdb();
+                            break;
 
-                        // Add strings from second file to current
-                        int addedCount = 0;
-                        int duplicateCount = 0;
+                        case EnhancedMergeSdbDialog.MergeMode.MergeFromSharelist:
+                            MergeFromSharelist();
+                            break;
 
-                        foreach (var entry in secondHandler.GetAllStrings())
-                        {
-                            if (entry == null) continue;
+                        case EnhancedMergeSdbDialog.MergeMode.MergeFromFile:
+                            // Reset cursor before handling file import which shows its own dialogs
+                            Mouse.OverrideCursor = null;
+                            MergeFromSharelistFile(mergeDialog.FilePath);
+                            // Don't reset after - MergeFromSharelistFile handles its own cursor state
+                            return;
 
-                            // Check if hash ID already exists in current file
-                            if (_sdbHandler.GetStringByHash(entry.HashId) != null)
-                            {
-                                duplicateCount++;
-                                continue; // Skip duplicate
-                            }
-
-                            // Add new string
-                            if (_sdbHandler.AddString(entry.Text, entry.HashId))
-                            {
-                                addedCount++;
-                            }
-                        }
-
-                        // Refresh display to reflect changes - caches are updated in AddString
-                        DisplayStrings();
-                        UpdateStatus($"Merged SDBs: {addedCount} strings added, {duplicateCount} duplicates skipped");
-
-                        MessageBox.Show(
-                            $"Merge completed successfully.\nStrings added: {addedCount}\nDuplicates skipped: {duplicateCount}",
-                            "Merge Complete",
-                            MessageBoxButton.OK,
-                            MessageBoxImage.Information);
-                    }
-                    else
-                    {
-                        MessageBox.Show("Failed to load second SDB file for merging.", "Merge Failed", MessageBoxButton.OK, MessageBoxImage.Error);
+                        case EnhancedMergeSdbDialog.MergeMode.MergeSpecific:
+                            MergeSpecificHashIds(mergeDialog.SpecificHashIds);
+                            break;
                     }
 
                     Mouse.OverrideCursor = null;
@@ -3460,6 +5396,320 @@ namespace SDBEditor
             {
                 Mouse.OverrideCursor = null;
                 MessageBox.Show($"Failed to merge SDBs: {ex.Message}", "Error", MessageBoxButton.OK, MessageBoxImage.Error);
+            }
+        }
+
+        private void MergeAllFromSdb()
+        {
+            // Select second SDB file to merge
+            var openFileDialog = new OpenFileDialog
+            {
+                Filter = "SDB Files (*.sdb)|*.sdb|All Files (*.*)|*.*",
+                Title = "Select SDB File to Merge"
+            };
+
+            if (openFileDialog.ShowDialog() == true)
+            {
+                string secondFilePath = openFileDialog.FileName;
+
+                // Create backup before merge
+                _backupHandler.CreateBackup(_currentFile, "pre_merge");
+
+                // Create temporary SDBHandler for the second file
+                SDBHandler secondHandler = new SDBHandler();
+                if (secondHandler.LoadSDB(secondFilePath))
+                {
+                    // Count before merge
+                    int initialCount = _sdbHandler.GetAllStrings().Count;
+
+                    // Add strings from second file to current
+                    int addedCount = 0;
+                    int duplicateCount = 0;
+
+                    foreach (var entry in secondHandler.GetAllStrings())
+                    {
+                        if (entry == null) continue;
+
+                        // Check if hash ID already exists in current file
+                        if (_sdbHandler.GetStringByHash(entry.HashId) != null)
+                        {
+                            duplicateCount++;
+                            continue; // Skip duplicate
+                        }
+
+                        // Add new string
+                        if (_sdbHandler.AddString(entry.Text, entry.HashId))
+                        {
+                            addedCount++;
+                        }
+                    }
+
+                    // Refresh display
+                    DisplayStrings();
+                    UpdateStatus($"Merged SDBs: {addedCount} strings added, {duplicateCount} duplicates skipped");
+
+                    var successDialog = new ImportSuccessDialog(
+    "SDB Merge Complete",
+    $"Successfully merged entries from {Path.GetFileName(secondFilePath)}.",
+    addedCount,      // new entries
+    0,               // replaced entries (not applicable for SDB merge)
+    duplicateCount   // skipped entries
+)
+                    {
+                        Owner = this
+                    };
+                    successDialog.ShowDialog();
+                }
+                else
+                {
+                    MessageBox.Show("Failed to load second SDB file for merging.", "Merge Failed", MessageBoxButton.OK, MessageBoxImage.Error);
+                }
+            }
+        }
+
+        private void MergeFromSharelist()
+        {
+            if (SharelistManager.Instance.Entries.Count == 0)
+            {
+                MessageBox.Show("Sharelist is empty.", "Nothing to Merge", MessageBoxButton.OK, MessageBoxImage.Information);
+                return;
+            }
+
+            // Check for conflicts first
+            var conflicts = new List<ConflictEntry>();
+            var noConflicts = new List<SharelistEntry>();
+
+            foreach (var entry in SharelistManager.Instance.Entries)
+            {
+                var existingEntry = _sdbHandler.GetStringByHash(entry.HashId);
+                if (existingEntry != null)
+                {
+                    conflicts.Add(new ConflictEntry
+                    {
+                        NewEntry = entry,
+                        ExistingEntry = existingEntry,
+                        Resolution = ConflictResolution.Skip // Default to skip
+                    });
+                }
+                else
+                {
+                    noConflicts.Add(entry);
+                }
+            }
+
+            // Handle conflicts if any exist
+            if (conflicts.Count > 0)
+            {
+                var conflictDialog = new ConflictResolutionDialog(conflicts)
+                {
+                    Owner = this
+                };
+
+                if (conflictDialog.ShowDialog() != true)
+                {
+                    // User cancelled conflict resolution
+                    UpdateStatus("Merge cancelled due to conflicts");
+                    return;
+                }
+
+                // Process resolved conflicts
+                foreach (var conflict in conflicts)
+                {
+                    switch (conflict.Resolution)
+                    {
+                        case ConflictResolution.UseNewHashId:
+                            noConflicts.Add(new SharelistEntry(
+                            conflict.NewHashId,
+                            conflict.NewEntry.Text,
+                            conflict.NewEntry.Text // Use the text as the third parameter
+                        ));
+                            break;
+                        case ConflictResolution.Replace:
+                            // This will be handled separately below
+                            break;
+                        case ConflictResolution.Skip:
+                            // Do nothing - skip this entry
+                            break;
+                    }
+                }
+            }
+
+            // Create backup before merge
+            _backupHandler.CreateBackup(_currentFile, "pre_sharelist_merge");
+
+            int addedCount = 0;
+            int replacedCount = 0;
+            int skippedCount = 0;
+
+            // Handle replacements first
+            foreach (var conflict in conflicts.Where(c => c.Resolution == ConflictResolution.Replace))
+            {
+                if (_sdbHandler.UpdateString(conflict.NewEntry.HashId, conflict.NewEntry.Text))
+                {
+                    replacedCount++;
+                }
+            }
+
+            // Add non-conflicted entries
+            foreach (var entry in noConflicts)
+            {
+                if (_sdbHandler.AddString(entry.Text, entry.HashId))
+                {
+                    addedCount++;
+                }
+            }
+
+            // Count skipped entries
+            skippedCount = conflicts.Count(c => c.Resolution == ConflictResolution.Skip);
+
+            // Refresh display
+            DisplayStrings();
+
+            UpdateStatus($"Merged from sharelist: {addedCount} added, {replacedCount} replaced, {skippedCount} skipped");
+
+            var successDialog = new ImportSuccessDialog(
+    "Sharelist Merge Complete",
+    $"Successfully merged {SharelistManager.Instance.Entries.Count} entries from your sharelist.",
+    addedCount,      // new entries
+    replacedCount,   // replaced entries  
+    skippedCount     // skipped entries
+)
+            {
+                Owner = this
+            };
+            successDialog.ShowDialog();
+
+        }
+
+        private void MergeFromSharelistFile(string filePath)
+        {
+            try
+            {
+                // Create backup before merge
+                _backupHandler.CreateBackup(_currentFile, "pre_file_merge");
+
+                // Reset cursor before showing dialogs
+                Mouse.OverrideCursor = null;
+
+                // Import entries to sharelist temporarily
+                var result = SharelistManager.Instance.ImportFromFile(filePath);
+                int imported = result.imported;
+                SharelistMetadata fullMetadata = result.metadata;
+
+                if (imported == 0)
+                {
+                    MessageBox.Show("No valid entries found in the file.", "Import Failed", MessageBoxButton.OK, MessageBoxImage.Warning);
+                    return;
+                }
+
+                // Show info dialog
+                var infoDialog = new SDBEditor.Views.RollbackDialog.SharelistInfoDialog(fullMetadata, imported)
+                {
+                    Owner = this
+                };
+
+                if (infoDialog.ShowDialog() == true)
+                {
+                    // Set wait cursor for the merge operation
+                    Mouse.OverrideCursor = Cursors.Wait;
+
+                    try
+                    {
+                        // Now merge these entries
+                        MergeFromSharelist();
+                    }
+                    finally
+                    {
+                        // Always reset cursor when merge completes
+                        Mouse.OverrideCursor = null;
+                    }
+                }
+                else
+                {
+                    // User cancelled, clear the sharelist
+                    SharelistManager.Instance.Clear();
+                    UpdateStatus("Import cancelled");
+                }
+            }
+            catch (Exception ex)
+            {
+                // Reset cursor in case of error
+                Mouse.OverrideCursor = null;
+                MessageBox.Show($"Failed to import sharelist: {ex.Message}", "Import Error", MessageBoxButton.OK, MessageBoxImage.Error);
+            }
+            finally
+            {
+                // Final safety check to ensure cursor is reset
+                Mouse.OverrideCursor = null;
+            }
+        }
+
+        private void MergeSpecificHashIds(List<uint> hashIds)
+        {
+            // Select source SDB file
+            var openFileDialog = new OpenFileDialog
+            {
+                Filter = "SDB Files (*.sdb)|*.sdb|All Files (*.*)|*.*",
+                Title = "Select Source SDB File"
+            };
+
+            if (openFileDialog.ShowDialog() == true)
+            {
+                // Create backup before merge
+                _backupHandler.CreateBackup(_currentFile, "pre_specific_merge");
+
+                // Load source SDB
+                SDBHandler sourceHandler = new SDBHandler();
+                if (sourceHandler.LoadSDB(openFileDialog.FileName))
+                {
+                    int addedCount = 0;
+                    int notFoundCount = 0;
+                    int duplicateCount = 0;
+
+                    foreach (uint hashId in hashIds)
+                    {
+                        var entry = sourceHandler.GetStringByHash(hashId);
+
+                        if (entry == null)
+                        {
+                            notFoundCount++;
+                            continue;
+                        }
+
+                        // Check if already exists
+                        if (_sdbHandler.GetStringByHash(hashId) != null)
+                        {
+                            duplicateCount++;
+                            continue;
+                        }
+
+                        // Add the string
+                        if (_sdbHandler.AddString(entry.Text, entry.HashId))
+                        {
+                            addedCount++;
+                        }
+                    }
+
+                    // Refresh display
+                    DisplayStrings();
+                    UpdateStatus($"Specific merge: {addedCount} added, {duplicateCount} skipped, {notFoundCount} not found");
+
+                    var successDialog = new ImportSuccessDialog(
+    "Specific Merge Complete",
+    $"Successfully merged specific hash IDs from {Path.GetFileName(openFileDialog.FileName)}.\nRequested: {hashIds.Count}, Not found: {notFoundCount}",
+    addedCount,      // new entries
+    0,               // replaced entries (not applicable)
+    duplicateCount   // skipped entries
+)
+                    {
+                        Owner = this
+                    };
+                    successDialog.ShowDialog();
+                }
+                else
+                {
+                    MessageBox.Show("Failed to load source SDB file.", "Load Failed", MessageBoxButton.OK, MessageBoxImage.Error);
+                }
             }
         }
 

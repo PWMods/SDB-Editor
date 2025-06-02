@@ -5,6 +5,22 @@ namespace SDBEditor.Models
     /// <summary>
     /// Represents a single string entry in an SDB file
     /// </summary>
+
+    public class SharelistEntry
+    {
+        public uint HashId { get; set; }
+        public string Text { get; set; }
+
+        public SharelistEntry()
+        {
+        }
+
+        public SharelistEntry(uint hashId, string text)
+        {
+            HashId = hashId;
+            Text = text;
+        }
+    }
     public class StringEntry
     {
         public uint HashId { get; set; }

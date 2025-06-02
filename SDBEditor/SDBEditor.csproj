@@ -9,7 +9,11 @@
     <Nullable>annotations</Nullable>
     <!-- This option makes it easier to work with possible null references -->
     <LangVersion>10.0</LangVersion>
-    <ApplicationIcon>sbd 2.ico</ApplicationIcon>
+    <ApplicationIcon>sbd logo3.ico</ApplicationIcon>
+    <PackageIcon>sbd logo3.png</PackageIcon>
+    <Version>2.0.6</Version>
+    <Authors>$(RipZz)</Authors>
+    <Company>$(Authors)</Company>
   </PropertyGroup>
 
   <ItemGroup>
@@ -19,7 +23,14 @@
   </ItemGroup>
 
   <ItemGroup>
-    <Content Include="sbd 2.ico" />
+    <Content Include="sbd logo3.ico" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Include="..\..\..\..\Pictures\sdb final\sbd logo3.png">
+      <Pack>True</Pack>
+      <PackagePath>\</PackagePath>
+    </None>
   </ItemGroup>
 
   <ItemGroup>

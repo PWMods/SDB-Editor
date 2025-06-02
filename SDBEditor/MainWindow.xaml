@@ -19,29 +19,323 @@
         TextOptions.TextRenderingMode="ClearType">
 
     <Window.Resources>
-        <!-- Simplified ScrollBar style -->
-        <Style x:Key="GreenScrollBarStyle" TargetType="{x:Type ScrollBar}">
-            <Setter Property="Width" Value="12"/>
-            <Setter Property="Background" Value="Transparent"/>
-            <Setter Property="Foreground" Value="#3D3D3D"/>
-            <Setter Property="BorderBrush" Value="Transparent"/>
+        <!-- ScrollBar Thumb -->
+        <Style x:Key="ScrollBarThumb" TargetType="{x:Type Thumb}">
+            <Setter Property="OverridesDefaultStyle" Value="true"/>
+            <Setter Property="IsTabStop" Value="false"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="{x:Type Thumb}">
+                        <Border x:Name="ThumbBorder"
+                                Background="#666666"
+                                CornerRadius="6"
+                                Margin="2">
+                            <Border.Effect>
+                                <DropShadowEffect Color="#00FF50" BlurRadius="8" ShadowDepth="0" Opacity="0"/>
+                            </Border.Effect>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="ThumbBorder" Property="Background" Value="#00AA44"/>
+                                <Setter TargetName="ThumbBorder" Property="Effect">
+                                    <Setter.Value>
+                                        <DropShadowEffect Color="#00FF50" BlurRadius="10" ShadowDepth="0" Opacity="0.6"/>
+                                    </Setter.Value>
+                                </Setter>
+                            </Trigger>
+                            <Trigger Property="IsDragging" Value="True">
+                                <Setter TargetName="ThumbBorder" Property="Background" Value="#00FF50"/>
+                                <Setter TargetName="ThumbBorder" Property="Effect">
+                                    <Setter.Value>
+                                        <DropShadowEffect Color="#00FF50" BlurRadius="15" ShadowDepth="0" Opacity="0.8"/>
+                                    </Setter.Value>
+                                </Setter>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
         </Style>
 
-        <!-- Apply the ScrollBar style globally -->
-        <Style TargetType="{x:Type ScrollBar}" BasedOn="{StaticResource GreenScrollBarStyle}">
+        <!-- ScrollBar RepeatButton (for track) -->
+        <Style x:Key="ScrollBarPageButton" TargetType="{x:Type RepeatButton}">
+            <Setter Property="OverridesDefaultStyle" Value="true"/>
+            <Setter Property="Background" Value="Transparent"/>
+            <Setter Property="Focusable" Value="false"/>
+            <Setter Property="IsTabStop" Value="false"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="{x:Type RepeatButton}">
+                        <Rectangle Fill="{TemplateBinding Background}" Width="{TemplateBinding Width}" Height="{TemplateBinding Height}"/>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <!-- ScrollBar Arrow RepeatButton -->
+        <Style x:Key="ScrollBarArrowButton" TargetType="{x:Type RepeatButton}">
+            <Setter Property="OverridesDefaultStyle" Value="true"/>
+            <Setter Property="Focusable" Value="false"/>
+            <Setter Property="IsTabStop" Value="false"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="{x:Type RepeatButton}">
+                        <Border Background="#3D3D3D" CornerRadius="2" Margin="1">
+                            <Path x:Name="Arrow"
+                                  HorizontalAlignment="Center"
+                                  VerticalAlignment="Center"
+                                  Fill="#999999"
+                                  Data="{Binding Content, RelativeSource={RelativeSource TemplatedParent}}"/>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Arrow" Property="Fill" Value="#00FF50"/>
+                            </Trigger>
+                            <Trigger Property="IsPressed" Value="True">
+                                <Setter TargetName="Arrow" Property="Fill" Value="#00AA44"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <!-- Vertical ScrollBar -->
+        <Style x:Key="GreenVerticalScrollBar" TargetType="{x:Type ScrollBar}">
+            <Setter Property="OverridesDefaultStyle" Value="true"/>
+            <Setter Property="Width" Value="14"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="{x:Type ScrollBar}">
+                        <Border Background="#2D2D30" CornerRadius="0">
+                            <Grid>
+                                <Grid.RowDefinitions>
+                                    <RowDefinition Height="14"/>
+                                    <RowDefinition Height="*"/>
+                                    <RowDefinition Height="14"/>
+                                </Grid.RowDefinitions>
+
+                                <!-- Up Arrow -->
+                                <RepeatButton Grid.Row="0"
+                                              Style="{StaticResource ScrollBarArrowButton}"
+                                              Command="ScrollBar.LineUpCommand"
+                                              Content="M 0 4 L 4 0 L 8 4"/>
+
+                                <!-- Track -->
+                                <Track x:Name="PART_Track" Grid.Row="1" IsDirectionReversed="true">
+                                    <Track.DecreaseRepeatButton>
+                                        <RepeatButton Style="{StaticResource ScrollBarPageButton}" Command="ScrollBar.PageUpCommand"/>
+                                    </Track.DecreaseRepeatButton>
+                                    <Track.Thumb>
+                                        <Thumb Style="{StaticResource ScrollBarThumb}"/>
+                                    </Track.Thumb>
+                                    <Track.IncreaseRepeatButton>
+                                        <RepeatButton Style="{StaticResource ScrollBarPageButton}" Command="ScrollBar.PageDownCommand"/>
+                                    </Track.IncreaseRepeatButton>
+                                </Track>
+
+                                <!-- Down Arrow -->
+                                <RepeatButton Grid.Row="2"
+                                              Style="{StaticResource ScrollBarArrowButton}"
+                                              Command="ScrollBar.LineDownCommand"
+                                              Content="M 0 0 L 4 4 L 8 0"/>
+                            </Grid>
+                        </Border>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <!-- Horizontal ScrollBar -->
+        <Style x:Key="GreenHorizontalScrollBar" TargetType="{x:Type ScrollBar}">
+            <Setter Property="OverridesDefaultStyle" Value="true"/>
+            <Setter Property="Height" Value="14"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="{x:Type ScrollBar}">
+                        <Border Background="#2D2D30" CornerRadius="0">
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="14"/>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="14"/>
+                                </Grid.ColumnDefinitions>
+
+                                <!-- Left Arrow -->
+                                <RepeatButton Grid.Column="0"
+                                              Style="{StaticResource ScrollBarArrowButton}"
+                                              Command="ScrollBar.LineLeftCommand"
+                                              Content="M 4 0 L 0 4 L 4 8"/>
+
+                                <!-- Track -->
+                                <Track x:Name="PART_Track" Grid.Column="1" IsDirectionReversed="false">
+                                    <Track.DecreaseRepeatButton>
+                                        <RepeatButton Style="{StaticResource ScrollBarPageButton}" Command="ScrollBar.PageLeftCommand"/>
+                                    </Track.DecreaseRepeatButton>
+                                    <Track.Thumb>
+                                        <Thumb Style="{StaticResource ScrollBarThumb}"/>
+                                    </Track.Thumb>
+                                    <Track.IncreaseRepeatButton>
+                                        <RepeatButton Style="{StaticResource ScrollBarPageButton}" Command="ScrollBar.PageRightCommand"/>
+                                    </Track.IncreaseRepeatButton>
+                                </Track>
+
+                                <!-- Right Arrow -->
+                                <RepeatButton Grid.Column="2"
+                                              Style="{StaticResource ScrollBarArrowButton}"
+                                              Command="ScrollBar.LineRightCommand"
+                                              Content="M 0 0 L 4 4 L 0 8"/>
+                            </Grid>
+                        </Border>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <!-- Main ScrollBar Style -->
+        <Style x:Key="GreenScrollBarStyle" TargetType="{x:Type ScrollBar}">
+            <Setter Property="OverridesDefaultStyle" Value="true"/>
             <Style.Triggers>
-                <Trigger Property="IsMouseOver" Value="True">
-                    <Setter Property="Foreground" Value="#00FF50"/>
+                <Trigger Property="Orientation" Value="Vertical">
+                    <Setter Property="Width" Value="14"/>
+                    <Setter Property="Template">
+                        <Setter.Value>
+                            <ControlTemplate TargetType="{x:Type ScrollBar}">
+                                <Border Background="#2D2D30" CornerRadius="0">
+                                    <Grid>
+                                        <Grid.RowDefinitions>
+                                            <RowDefinition Height="14"/>
+                                            <RowDefinition Height="*"/>
+                                            <RowDefinition Height="14"/>
+                                        </Grid.RowDefinitions>
+
+                                        <!-- Up Arrow -->
+                                        <RepeatButton Grid.Row="0"
+                                                      Style="{StaticResource ScrollBarArrowButton}"
+                                                      Command="ScrollBar.LineUpCommand"
+                                                      Content="M 0 4 L 4 0 L 8 4"/>
+
+                                        <!-- Track -->
+                                        <Track x:Name="PART_Track" Grid.Row="1" IsDirectionReversed="true">
+                                            <Track.DecreaseRepeatButton>
+                                                <RepeatButton Style="{StaticResource ScrollBarPageButton}" Command="ScrollBar.PageUpCommand"/>
+                                            </Track.DecreaseRepeatButton>
+                                            <Track.Thumb>
+                                                <Thumb Style="{StaticResource ScrollBarThumb}"/>
+                                            </Track.Thumb>
+                                            <Track.IncreaseRepeatButton>
+                                                <RepeatButton Style="{StaticResource ScrollBarPageButton}" Command="ScrollBar.PageDownCommand"/>
+                                            </Track.IncreaseRepeatButton>
+                                        </Track>
+
+                                        <!-- Down Arrow -->
+                                        <RepeatButton Grid.Row="2"
+                                                      Style="{StaticResource ScrollBarArrowButton}"
+                                                      Command="ScrollBar.LineDownCommand"
+                                                      Content="M 0 0 L 4 4 L 8 0"/>
+                                    </Grid>
+                                </Border>
+                            </ControlTemplate>
+                        </Setter.Value>
+                    </Setter>
+                </Trigger>
+                <Trigger Property="Orientation" Value="Horizontal">
+                    <Setter Property="Height" Value="14"/>
+                    <Setter Property="Template">
+                        <Setter.Value>
+                            <ControlTemplate TargetType="{x:Type ScrollBar}">
+                                <Border Background="#2D2D30" CornerRadius="0">
+                                    <Grid>
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="14"/>
+                                            <ColumnDefinition Width="*"/>
+                                            <ColumnDefinition Width="14"/>
+                                        </Grid.ColumnDefinitions>
+
+                                        <!-- Left Arrow -->
+                                        <RepeatButton Grid.Column="0"
+                                                      Style="{StaticResource ScrollBarArrowButton}"
+                                                      Command="ScrollBar.LineLeftCommand"
+                                                      Content="M 4 0 L 0 4 L 4 8"/>
+
+                                        <!-- Track -->
+                                        <Track x:Name="PART_Track" Grid.Column="1" IsDirectionReversed="false">
+                                            <Track.DecreaseRepeatButton>
+                                                <RepeatButton Style="{StaticResource ScrollBarPageButton}" Command="ScrollBar.PageLeftCommand"/>
+                                            </Track.DecreaseRepeatButton>
+                                            <Track.Thumb>
+                                                <Thumb Style="{StaticResource ScrollBarThumb}"/>
+                                            </Track.Thumb>
+                                            <Track.IncreaseRepeatButton>
+                                                <RepeatButton Style="{StaticResource ScrollBarPageButton}" Command="ScrollBar.PageRightCommand"/>
+                                            </Track.IncreaseRepeatButton>
+                                        </Track>
+
+                                        <!-- Right Arrow -->
+                                        <RepeatButton Grid.Column="2"
+                                                      Style="{StaticResource ScrollBarArrowButton}"
+                                                      Command="ScrollBar.LineRightCommand"
+                                                      Content="M 0 0 L 4 4 L 0 8"/>
+                                    </Grid>
+                                </Border>
+                            </ControlTemplate>
+                        </Setter.Value>
+                    </Setter>
                 </Trigger>
             </Style.Triggers>
         </Style>
+
+        <!-- Apply to all ScrollBars -->
+        <Style TargetType="{x:Type ScrollBar}" BasedOn="{StaticResource GreenScrollBarStyle}"/>
 
         <!-- Style for ScrollViewer that preserves performance -->
         <Style x:Key="GreenScrollViewer" TargetType="{x:Type ScrollViewer}">
             <Setter Property="HorizontalScrollBarVisibility" Value="Auto"/>
             <Setter Property="VerticalScrollBarVisibility" Value="Auto"/>
-            <Setter Property="Background" Value="Transparent"/>
+            <Setter Property="Background" Value="#3D3D3D"/>
             <Setter Property="Padding" Value="0"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="{x:Type ScrollViewer}">
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="Auto"/>
+                            </Grid.ColumnDefinitions>
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="*"/>
+                                <RowDefinition Height="Auto"/>
+                            </Grid.RowDefinitions>
+
+                            <ScrollContentPresenter x:Name="PART_ScrollContentPresenter"
+                                                    Grid.Column="0"
+                                                    Grid.Row="0"
+                                                    CanContentScroll="{TemplateBinding CanContentScroll}"
+                                                    ContentTemplate="{TemplateBinding ContentTemplate}"/>
+
+                            <ScrollBar x:Name="PART_VerticalScrollBar"
+                                       Grid.Column="1"
+                                       Grid.Row="0"
+                                       Orientation="Vertical"
+                                       Value="{TemplateBinding VerticalOffset}"
+                                       Maximum="{TemplateBinding ScrollableHeight}"
+                                       ViewportSize="{TemplateBinding ViewportHeight}"
+                                       Visibility="{TemplateBinding ComputedVerticalScrollBarVisibility}"
+                                       Style="{StaticResource GreenScrollBarStyle}"/>
+
+                            <ScrollBar x:Name="PART_HorizontalScrollBar"
+                                       Grid.Column="0"
+                                       Grid.Row="1"
+                                       Orientation="Horizontal"
+                                       Value="{TemplateBinding HorizontalOffset}"
+                                       Maximum="{TemplateBinding ScrollableWidth}"
+                                       ViewportSize="{TemplateBinding ViewportWidth}"
+                                       Visibility="{TemplateBinding ComputedHorizontalScrollBarVisibility}"
+                                       Style="{StaticResource GreenScrollBarStyle}"/>
+                        </Grid>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
         </Style>
 
         <!-- Style for navigation buttons -->
@@ -79,8 +373,6 @@
             </Setter>
         </Style>
 
-
-
         <!-- Style for action buttons -->
         <Style x:Key="ActionButtonStyle" TargetType="Button">
             <Setter Property="Background" Value="#2D2D30"/>
@@ -114,6 +406,45 @@
             </Setter>
         </Style>
 
+        <!-- New Style for circular sharelist buttons -->
+        <Style x:Key="CircularSharelistButtonStyle" TargetType="Button">
+            <Setter Property="Background" Value="#3D3D40"/>
+            <Setter Property="Foreground" Value="White"/>
+            <Setter Property="BorderThickness" Value="0"/>
+            <Setter Property="Width" Value="48"/>
+            <Setter Property="Height" Value="48"/>
+            <Setter Property="Margin" Value="5,8,5,2"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Grid>
+                            <Ellipse Fill="{TemplateBinding Background}" 
+                                     Width="{TemplateBinding Width}"
+                                     Height="{TemplateBinding Height}">
+                                <Ellipse.Effect>
+                                    <DropShadowEffect BlurRadius="4" ShadowDepth="2" Opacity="0.3" Color="Black"/>
+                                </Ellipse.Effect>
+                            </Ellipse>
+                            <ContentPresenter HorizontalAlignment="Center" 
+                                              VerticalAlignment="Center"/>
+                        </Grid>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter Property="Background" Value="#00AA44"/>
+                            </Trigger>
+                            <Trigger Property="IsPressed" Value="True">
+                                <Setter Property="Background" Value="#00FF50"/>
+                            </Trigger>
+                            <Trigger Property="IsEnabled" Value="False">
+                                <Setter Property="Background" Value="#2D2D30"/>
+                                <Setter Property="Foreground" Value="#666666"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
         <!-- Style for DataGrid -->
         <Style x:Key="DataGridStyle" TargetType="DataGrid">
             <Setter Property="Background" Value="#2D2D30"/>
@@ -127,7 +458,7 @@
             <Setter Property="HeadersVisibility" Value="Column"/>
             <Setter Property="CanUserAddRows" Value="False"/>
             <Setter Property="CanUserDeleteRows" Value="False"/>
-            <Setter Property="SelectionMode" Value="Single"/>
+            <Setter Property="SelectionMode" Value="Extended"/>
             <Setter Property="SelectionUnit" Value="FullRow"/>
             <Setter Property="AutoGenerateColumns" Value="False"/>
             <Setter Property="ColumnHeaderHeight" Value="32"/>
@@ -142,6 +473,81 @@
             <Setter Property="RenderOptions.BitmapScalingMode" Value="HighQuality"/>
             <Setter Property="RenderOptions.EdgeMode" Value="Aliased"/>
             <Setter Property="RenderOptions.ClearTypeHint" Value="Enabled"/>
+
+            <!-- Override the DataGrid template to ensure our ScrollBar style is used -->
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="{x:Type DataGrid}">
+                        <Border Background="{TemplateBinding Background}"
+                                BorderBrush="{TemplateBinding BorderBrush}"
+                                BorderThickness="{TemplateBinding BorderThickness}"
+                                SnapsToDevicePixels="True">
+                            <ScrollViewer x:Name="DG_ScrollViewer" 
+                                          Focusable="false"
+                                          Background="Transparent">
+                                <ScrollViewer.Template>
+                                    <ControlTemplate TargetType="{x:Type ScrollViewer}">
+                                        <Grid>
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="Auto"/>
+                                                <ColumnDefinition Width="*"/>
+                                                <ColumnDefinition Width="Auto"/>
+                                            </Grid.ColumnDefinitions>
+                                            <Grid.RowDefinitions>
+                                                <RowDefinition Height="Auto"/>
+                                                <RowDefinition Height="*"/>
+                                                <RowDefinition Height="Auto"/>
+                                            </Grid.RowDefinitions>
+
+                                            <Button Focusable="false"
+                                                    Command="{x:Static DataGrid.SelectAllCommand}"
+                                                    Style="{DynamicResource {ComponentResourceKey ResourceId=DataGridSelectAllButtonStyle, TypeInTargetAssembly={x:Type DataGrid}}}"
+                                                    Visibility="{Binding HeadersVisibility, ConverterParameter={x:Static DataGridHeadersVisibility.All}, Converter={x:Static DataGrid.HeadersVisibilityConverter}, RelativeSource={RelativeSource AncestorType={x:Type DataGrid}}}"
+                                                    Width="{Binding CellsPanelHorizontalOffset, RelativeSource={RelativeSource AncestorType={x:Type DataGrid}}}"/>
+
+                                            <DataGridColumnHeadersPresenter x:Name="PART_ColumnHeadersPresenter"
+                                                                            Grid.Column="1"
+                                                                            Visibility="{Binding HeadersVisibility, ConverterParameter={x:Static DataGridHeadersVisibility.Column}, Converter={x:Static DataGrid.HeadersVisibilityConverter}, RelativeSource={RelativeSource AncestorType={x:Type DataGrid}}}"/>
+
+                                            <ScrollContentPresenter x:Name="PART_ScrollContentPresenter" 
+                                                                    CanContentScroll="{TemplateBinding CanContentScroll}"
+                                                                    Grid.ColumnSpan="2"
+                                                                    Grid.Row="1"/>
+
+                                            <ScrollBar x:Name="PART_VerticalScrollBar"
+                                                       Grid.Column="2"
+                                                       Grid.Row="1"
+                                                       Orientation="Vertical"
+                                                       ViewportSize="{TemplateBinding ViewportHeight}"
+                                                       Maximum="{TemplateBinding ScrollableHeight}"
+                                                       Visibility="{TemplateBinding ComputedVerticalScrollBarVisibility}"
+                                                       Value="{Binding VerticalOffset, Mode=OneWay, RelativeSource={RelativeSource TemplatedParent}}"
+                                                       Style="{StaticResource GreenScrollBarStyle}"/>
+
+                                            <Grid Grid.Column="1" Grid.Row="2">
+                                                <Grid.ColumnDefinitions>
+                                                    <ColumnDefinition Width="{Binding NonFrozenColumnsViewportHorizontalOffset, RelativeSource={RelativeSource AncestorType={x:Type DataGrid}}}"/>
+                                                    <ColumnDefinition Width="*"/>
+                                                </Grid.ColumnDefinitions>
+
+                                                <ScrollBar x:Name="PART_HorizontalScrollBar"
+                                                           Grid.Column="1"
+                                                           Orientation="Horizontal"
+                                                           ViewportSize="{TemplateBinding ViewportWidth}"
+                                                           Maximum="{TemplateBinding ScrollableWidth}"
+                                                           Visibility="{TemplateBinding ComputedHorizontalScrollBarVisibility}"
+                                                           Value="{Binding HorizontalOffset, Mode=OneWay, RelativeSource={RelativeSource TemplatedParent}}"
+                                                           Style="{StaticResource GreenScrollBarStyle}"/>
+                                            </Grid>
+                                        </Grid>
+                                    </ControlTemplate>
+                                </ScrollViewer.Template>
+                                <ItemsPresenter SnapsToDevicePixels="{TemplateBinding SnapsToDevicePixels}"/>
+                            </ScrollViewer>
+                        </Border>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
         </Style>
 
         <!-- Style for DataGrid Headers -->
@@ -329,6 +735,102 @@
             </Style.Resources>
         </Style>
 
+        <!-- COMPLETELY REBUILT CONTEXT MENU STYLE -->
+        <Style x:Key="GreenContextMenuStyle" TargetType="{x:Type ContextMenu}">
+            <Setter Property="Background" Value="#2D2D30"/>
+            <Setter Property="BorderBrush" Value="#3F3F46"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="Padding" Value="2"/>
+            <Setter Property="Effect">
+                <Setter.Value>
+                    <DropShadowEffect BlurRadius="8" ShadowDepth="3" Opacity="0.5" Color="Black"/>
+                </Setter.Value>
+            </Setter>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="{x:Type ContextMenu}">
+                        <Border Background="{TemplateBinding Background}" 
+                                BorderBrush="{TemplateBinding BorderBrush}" 
+                                BorderThickness="{TemplateBinding BorderThickness}">
+                            <StackPanel IsItemsHost="True" Margin="{TemplateBinding Padding}"/>
+                        </Border>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <!-- COMPLETELY CUSTOM MENU ITEM STYLE WITHOUT WHITE BACKGROUND -->
+        <Style x:Key="GreenMenuItemStyle" TargetType="{x:Type MenuItem}">
+            <Setter Property="Background" Value="Transparent"/>
+            <Setter Property="Foreground" Value="White"/>
+            <Setter Property="Height" Value="28"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="{x:Type MenuItem}">
+                        <Border x:Name="MainBorder" 
+                                Background="{TemplateBinding Background}"
+                                BorderThickness="0"
+                                CornerRadius="3"
+                                Padding="2">
+                            <DockPanel LastChildFill="True" Background="Transparent">
+                                <!-- Icon with glow effect -->
+                                <DockPanel.Resources>
+                                    <Style TargetType="TextBlock">
+                                        <Setter Property="VerticalAlignment" Value="Center"/>
+                                    </Style>
+                                </DockPanel.Resources>
+
+                                <!-- Icon container without white background -->
+                                <ContentPresenter x:Name="Icon" 
+                                                ContentSource="Icon" 
+                                                Width="26" 
+                                                Height="20"
+                                                VerticalAlignment="Center"
+                                                HorizontalAlignment="Center"
+                                                DockPanel.Dock="Left">
+                                    <ContentPresenter.Effect>
+                                        <DropShadowEffect Color="#00FF50" BlurRadius="15" ShadowDepth="0" Opacity="0.8"/>
+                                    </ContentPresenter.Effect>
+                                </ContentPresenter>
+
+                                <!-- Header text -->
+                                <ContentPresenter x:Name="HeaderHost" 
+                                                ContentSource="Header"
+                                                RecognizesAccessKey="True"
+                                                Margin="6,0,6,0"
+                                                VerticalAlignment="Center"/>
+                            </DockPanel>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsHighlighted" Value="True">
+                                <Setter TargetName="MainBorder" Property="Background" Value="#3E3E42"/>
+                                <Setter Property="Foreground" Value="#00FF50"/>
+                            </Trigger>
+                            <Trigger Property="IsEnabled" Value="False">
+                                <Setter Property="Foreground" Value="#999999"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <Style x:Key="GreenMenuSeparatorStyle" TargetType="{x:Type Separator}">
+            <Setter Property="Height" Value="1"/>
+            <Setter Property="Margin" Value="5,3"/>
+            <Setter Property="Background" Value="#3F3F46"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="{x:Type Separator}">
+                        <Border BorderThickness="0" 
+                                Background="{TemplateBinding Background}" 
+                                Height="{TemplateBinding Height}" 
+                                Margin="{TemplateBinding Margin}"/>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+        <!-- END OF CUSTOM MENU STYLES -->
 
         <!-- Storyboards for Status Bar animations -->
         <Storyboard x:Key="StatusBarFadeIn">
@@ -351,6 +853,10 @@
                          Direction="270" 
                          Color="Black" 
                          Opacity="0.6" />
+
+        <!-- Converters for sharelist update feature -->
+        <BooleanToVisibilityConverter x:Key="BoolToVisibilityConverter"/>
+        <local:BoolToThicknessConverter x:Key="BoolToThicknessConverter"/>
     </Window.Resources>
 
     <!-- Main container grid with everything inside it (only ONE direct child of Window) -->
@@ -360,6 +866,8 @@
             <Grid.ColumnDefinitions>
                 <ColumnDefinition Width="220"/>
                 <ColumnDefinition Width="*"/>
+                <ColumnDefinition Width="Auto"/>
+                <!-- New column for sharelist -->
             </Grid.ColumnDefinitions>
 
             <!-- Left Sidebar -->
@@ -386,102 +894,85 @@
                 </Image>
 
                 <!-- Navigation Menu -->
-                <ScrollViewer Grid.Row="1" Style="{StaticResource GreenScrollViewer}" VerticalScrollBarVisibility="Auto">
-                    <StackPanel Margin="15,20">
-                        <Button Style="{StaticResource NavButtonStyle}" Click="OpenFile_Click">
-                            <StackPanel Orientation="Horizontal">
-                                <TextBlock Text="&#xE8E5;" 
-                                           FontFamily="Segoe MDL2 Assets" 
-                                           Margin="0,0,10,0"/>
+                <ScrollViewer Grid.Row="1" 
+                              Style="{StaticResource GreenScrollViewer}" 
+                              VerticalScrollBarVisibility="Auto" 
+                              Background="Transparent">
+                    <StackPanel Margin="15,20" Background="Transparent">
+                        <Button Style="{StaticResource NavButtonStyle}" Click="OpenFile_Click" Background="Transparent" BorderBrush="Transparent">
+                            <StackPanel Orientation="Horizontal" Background="Transparent">
+                                <TextBlock Text="&#xE8E5;" FontFamily="Segoe MDL2 Assets" Margin="0,0,10,0"/>
                                 <TextBlock Text="Open SDB"/>
                             </StackPanel>
                         </Button>
 
-                        <Button Style="{StaticResource NavButtonStyle}" Click="SaveFile_Click">
-                            <StackPanel Orientation="Horizontal">
-                                <TextBlock Text="&#xE74E;" 
-                                           FontFamily="Segoe MDL2 Assets" 
-                                           Margin="0,0,10,0"/>
+                        <Button Style="{StaticResource NavButtonStyle}" Click="SaveFile_Click" Background="Transparent" BorderBrush="Transparent">
+                            <StackPanel Orientation="Horizontal" Background="Transparent">
+                                <TextBlock Text="&#xE74E;" FontFamily="Segoe MDL2 Assets" Margin="0,0,10,0"/>
                                 <TextBlock Text="Save SDB"/>
                             </StackPanel>
                         </Button>
 
-                        <Button Style="{StaticResource NavButtonStyle}" Click="AutoSeekSdb_Click">
-                            <StackPanel Orientation="Horizontal">
-                                <TextBlock Text="&#xE895;" 
-                                           FontFamily="Segoe MDL2 Assets" 
-                                           Margin="0,0,10,0"/>
+                        <Button Style="{StaticResource NavButtonStyle}" Click="AutoSeekSdb_Click" Background="Transparent" BorderBrush="Transparent">
+                            <StackPanel Orientation="Horizontal" Background="Transparent">
+                                <TextBlock Text="&#xE895;" FontFamily="Segoe MDL2 Assets" Margin="0,0,10,0"/>
                                 <TextBlock Text="Auto Seek SDB"/>
                             </StackPanel>
                         </Button>
 
                         <Separator Margin="0,10" Background="#00FF50"/>
 
-                        <Button Style="{StaticResource NavButtonStyle}" Click="AddString_Click">
-                            <StackPanel Orientation="Horizontal">
-                                <TextBlock Text="&#xE109;" 
-                                           FontFamily="Segoe MDL2 Assets" 
-                                           Margin="0,0,10,0"/>
+                        <Button Style="{StaticResource NavButtonStyle}" Click="AddString_Click" Background="Transparent" BorderBrush="Transparent">
+                            <StackPanel Orientation="Horizontal" Background="Transparent">
+                                <TextBlock Text="&#xE109;" FontFamily="Segoe MDL2 Assets" Margin="0,0,10,0"/>
                                 <TextBlock Text="Add New String"/>
                             </StackPanel>
                         </Button>
 
-                        <Button Style="{StaticResource NavButtonStyle}" Click="AddMultiple_Click">
-                            <StackPanel Orientation="Horizontal">
-                                <TextBlock Text="&#xE8EF;" 
-                                           FontFamily="Segoe MDL2 Assets" 
-                                           Margin="0,0,10,0"/>
+                        <Button Style="{StaticResource NavButtonStyle}" Click="AddMultiple_Click" Background="Transparent" BorderBrush="Transparent">
+                            <StackPanel Orientation="Horizontal" Background="Transparent">
+                                <TextBlock Text="&#xE8EF;" FontFamily="Segoe MDL2 Assets" Margin="0,0,10,0"/>
                                 <TextBlock Text="Add Multiple Strings"/>
                             </StackPanel>
                         </Button>
 
                         <Separator Margin="0,10" Background="#00FF50"/>
 
-                        <Button Style="{StaticResource NavButtonStyle}" Click="MergeSdbs_Click">
-                            <StackPanel Orientation="Horizontal">
-                                <TextBlock Text="&#xE8D2;" 
-                                           FontFamily="Segoe MDL2 Assets" 
-                                           Margin="0,0,10,0"/>
+                        <Button Style="{StaticResource NavButtonStyle}" Click="MergeSdbs_Click" Background="Transparent" BorderBrush="Transparent">
+                            <StackPanel Orientation="Horizontal" Background="Transparent">
+                                <TextBlock Text="&#xE8D2;" FontFamily="Segoe MDL2 Assets" Margin="0,0,10,0"/>
                                 <TextBlock Text="Merge SDBs"/>
                             </StackPanel>
                         </Button>
 
-                        <Button Style="{StaticResource NavButtonStyle}" Click="ChangeLanguage_Click">
-                            <StackPanel Orientation="Horizontal">
-                                <TextBlock Text="&#xE8C3;" 
-                                           FontFamily="Segoe MDL2 Assets" 
-                                           Margin="0,0,10,0"/>
+                        <Button Style="{StaticResource NavButtonStyle}" Click="ChangeLanguage_Click" Background="Transparent" BorderBrush="Transparent">
+                            <StackPanel Orientation="Horizontal" Background="Transparent">
+                                <TextBlock Text="&#xE8C3;" FontFamily="Segoe MDL2 Assets" Margin="0,0,10,0"/>
                                 <TextBlock Text="Change Language"/>
                             </StackPanel>
                         </Button>
 
                         <Separator Margin="0,10" Background="#00FF50"/>
 
-                        <Button Style="{StaticResource NavButtonStyle}" Click="ImportStrings_Click">
-                            <StackPanel Orientation="Horizontal">
-                                <TextBlock Text="&#xE8DB;" 
-                                           FontFamily="Segoe MDL2 Assets" 
-                                           Margin="0,0,10,0"/>
+                        <Button Style="{StaticResource NavButtonStyle}" Click="ImportStrings_Click" Background="Transparent" BorderBrush="Transparent">
+                            <StackPanel Orientation="Horizontal" Background="Transparent">
+                                <TextBlock Text="&#xE8DB;" FontFamily="Segoe MDL2 Assets" Margin="0,0,10,0"/>
                                 <TextBlock Text="Import Strings"/>
                             </StackPanel>
                         </Button>
 
-                        <Button Style="{StaticResource NavButtonStyle}" Click="ExportStrings_Click">
-                            <StackPanel Orientation="Horizontal">
-                                <TextBlock Text="&#xE8DE;" 
-                                           FontFamily="Segoe MDL2 Assets" 
-                                           Margin="0,0,10,0"/>
+                        <Button Style="{StaticResource NavButtonStyle}" Click="ExportStrings_Click" Background="Transparent" BorderBrush="Transparent">
+                            <StackPanel Orientation="Horizontal" Background="Transparent">
+                                <TextBlock Text="&#xE8DE;" FontFamily="Segoe MDL2 Assets" Margin="0,0,10,0"/>
                                 <TextBlock Text="Export Strings"/>
                             </StackPanel>
                         </Button>
 
                         <Separator Margin="0,10" Background="#00FF50"/>
 
-                        <Button Style="{StaticResource NavButtonStyle}" Click="Rollback_Click">
-                            <StackPanel Orientation="Horizontal">
-                                <TextBlock Text="&#xE7A7;" 
-                                           FontFamily="Segoe MDL2 Assets" 
-                                           Margin="0,0,10,0"/>
+                        <Button Style="{StaticResource NavButtonStyle}" Click="Rollback_Click" Background="Transparent" BorderBrush="Transparent">
+                            <StackPanel Orientation="Horizontal" Background="Transparent">
+                                <TextBlock Text="&#xE7A7;" FontFamily="Segoe MDL2 Assets" Margin="0,0,10,0"/>
                                 <TextBlock Text="Rollback"/>
                             </StackPanel>
                         </Button>
@@ -489,7 +980,7 @@
                 </ScrollViewer>
 
                 <!-- Version Info -->
-                <TextBlock Text="Version 2.0" 
+                <TextBlock Text="Version 2.5" 
                            Foreground="#999999" 
                            HorizontalAlignment="Center" 
                            Margin="0,23,0,6"
@@ -566,6 +1057,28 @@
                                     ToolTip="Refresh Display">
                                 <TextBlock Text="&#xE72C;" FontFamily="Segoe MDL2 Assets"/>
                             </Button>
+
+                            <!-- Sharelist toggle button -->
+                            <Button Style="{StaticResource ActionButtonStyle}" 
+                                    Click="ToggleSharelist_Click"
+                                    ToolTip="Toggle Sharelist Panel"
+                                    Margin="5,0,0,0">
+                                <StackPanel Orientation="Horizontal">
+                                    <TextBlock Text="&#xE8F1;" FontFamily="Segoe MDL2 Assets"/>
+                                    <Border x:Name="SharelistButtonBadge" 
+                                           Background="#00FF50" 
+                                           CornerRadius="8"
+                                           Padding="5,2"
+                                           Margin="5,0,0,0"
+                                           Visibility="Collapsed">
+                                        <TextBlock x:Name="SharelistButtonBadgeText"
+                                           Text="0" 
+                                           Foreground="#1E1E1E"
+                                           FontSize="10"
+                                           FontWeight="Bold"/>
+                                    </Border>
+                                </StackPanel>
+                            </Button>
                         </StackPanel>
                     </Grid>
                 </Border>
@@ -585,21 +1098,21 @@
                     <TextBlock Text="Search:" 
                                Foreground="White" 
                                VerticalAlignment="Center"
-                               Margin="12,0,4,0"
+                               Margin="12,-1,4,0"
                                Grid.Column="0"/>
 
                     <TextBox x:Name="SearchBox" 
                              Style="{StaticResource SearchBoxStyle}"
                              TextChanged="SearchBox_TextChanged"
                              VerticalContentAlignment="Center"
-                             Padding="10,5,10,5"
+                             Padding="10,3,10,5"
                              MinHeight="32"
                              Grid.Column="1"/>
 
-                    <TextBlock Text="Search by:" 
+                    <TextBlock Text="Search by:"
                                Foreground="White" 
                                VerticalAlignment="Center"
-                               Margin="15,0,10,0"
+                               Margin="25,0,10,0"
                                Grid.Column="2"/>
 
                     <ComboBox x:Name="SearchTypeComboBox" 
@@ -608,7 +1121,6 @@
                               Grid.Column="3">
                         <ComboBoxItem Content="Text" IsSelected="True"/>
                         <ComboBoxItem Content="String Hash ID"/>
-                        <ComboBoxItem Content="Index"/>
                     </ComboBox>
                 </Grid>
 
@@ -636,54 +1148,54 @@
                           RenderOptions.EdgeMode="Aliased"
                           Grid.Row="2">
                     <DataGrid.Columns>
-                        <DataGridTextColumn Header="Index" 
-                                            Binding="{Binding Index}" 
-                                            Width="60" 
-                                            IsReadOnly="True"/>
                         <DataGridTextColumn Header="String Hash ID" 
                                             Binding="{Binding HashId}" 
                                             Width="120" 
-                                            IsReadOnly="True"/>
-                        <DataGridTextColumn Header="Hex" 
-                                            Binding="{Binding HexValue}" 
-                                            Width="120" 
+                                            IsReadOnly="False"/>
+                        <DataGridTextColumn Header="Entry Function" 
+                                            Binding="{Binding FunctionEntry}" 
+                                            Width="120"
+                                            Visibility="Hidden"
                                             IsReadOnly="True"/>
                         <DataGridTextColumn Header="Text" 
                                             Binding="{Binding Text}" 
                                             Width="*" 
                                             IsReadOnly="True"/>
                     </DataGrid.Columns>
+
+                    <!-- COMPLETELY CUSTOM CONTEXT MENU WITH NO WHITE BACKGROUNDS -->
                     <DataGrid.ContextMenu>
-                        <ContextMenu>
-                            <MenuItem Header="Edit" Click="EditMenuItem_Click">
+                        <ContextMenu Style="{StaticResource GreenContextMenuStyle}">
+                            <MenuItem Header="Edit" Click="EditMenuItem_Click" Style="{StaticResource GreenMenuItemStyle}">
                                 <MenuItem.Icon>
-                                    <TextBlock Text="&#xE70F;" FontFamily="Segoe MDL2 Assets"/>
+                                    <TextBlock Text="&#xE70F;" FontFamily="Segoe MDL2 Assets" Foreground="#00FF50"/>
                                 </MenuItem.Icon>
                             </MenuItem>
-                            <MenuItem Header="Delete" Click="DeleteMenuItem_Click">
+                            <MenuItem Header="Delete" Click="DeleteMenuItem_Click" Style="{StaticResource GreenMenuItemStyle}">
                                 <MenuItem.Icon>
-                                    <TextBlock Text="&#xE74D;" FontFamily="Segoe MDL2 Assets"/>
+                                    <TextBlock Text="&#xE74D;" FontFamily="Segoe MDL2 Assets" Foreground="#00FF50"/>
                                 </MenuItem.Icon>
                             </MenuItem>
-                            <Separator/>
-                            <MenuItem Header="Copy Index" Click="CopyIndexMenuItem_Click">
+                            <Separator Style="{StaticResource GreenMenuSeparatorStyle}"/>
+                            <MenuItem Header="Copy Hash ID" Click="CopyHashMenuItem_Click" Name="CopyHashMenuItem" Style="{StaticResource GreenMenuItemStyle}">
                                 <MenuItem.Icon>
-                                    <TextBlock Text="&#xE8C8;" FontFamily="Segoe MDL2 Assets"/>
+                                    <TextBlock Text="&#xE8C8;" FontFamily="Segoe MDL2 Assets" Foreground="#00FF50" Name="CopyHashIcon"/>
                                 </MenuItem.Icon>
                             </MenuItem>
-                            <MenuItem Header="Copy Hash ID" Click="CopyHashMenuItem_Click">
+                            <MenuItem Header="Copy Hex" Click="CopyHexMenuItem_Click" Style="{StaticResource GreenMenuItemStyle}">
                                 <MenuItem.Icon>
-                                    <TextBlock Text="&#xE8C8;" FontFamily="Segoe MDL2 Assets"/>
+                                    <TextBlock Text="&#xE8C8;" FontFamily="Segoe MDL2 Assets" Foreground="#00FF50"/>
                                 </MenuItem.Icon>
                             </MenuItem>
-                            <MenuItem Header="Copy Hex" Click="CopyHexMenuItem_Click">
+                            <MenuItem Header="Copy Reverse Hex" Click="CopyReverseHexMenuItem_Click" Style="{StaticResource GreenMenuItemStyle}">
                                 <MenuItem.Icon>
-                                    <TextBlock Text="&#xE8C8;" FontFamily="Segoe MDL2 Assets"/>
+                                    <TextBlock Text="&#xE8C8;" FontFamily="Segoe MDL2 Assets" Foreground="#00FF50"/>
                                 </MenuItem.Icon>
                             </MenuItem>
-                            <MenuItem Header="Copy Reverse Hex" Click="CopyReverseHexMenuItem_Click">
+                            <Separator Style="{StaticResource GreenMenuSeparatorStyle}"/>
+                            <MenuItem Header="Add to Sharelist" Click="AddToSharelist_Click" Style="{StaticResource GreenMenuItemStyle}">
                                 <MenuItem.Icon>
-                                    <TextBlock Text="&#xE8C8;" FontFamily="Segoe MDL2 Assets"/>
+                                    <TextBlock Text="&#xE8F1;" FontFamily="Segoe MDL2 Assets" Foreground="#00FF50"/>
                                 </MenuItem.Icon>
                             </MenuItem>
                         </ContextMenu>
@@ -701,14 +1213,239 @@
                             <Grid Width="{Binding ActualWidth, RelativeSource={RelativeSource AncestorType=StatusBarItem}}">
                                 <TextBlock x:Name="StatusText" Text="Ready" Margin="10,0" Foreground="White" HorizontalAlignment="Left"/>
 
-                                <!-- Add a cache stats button to the right side -->
-                                <Button Content="Cache Stats" Click="CacheStats_Click" Style="{StaticResource ActionButtonStyle}" 
-                                        HorizontalAlignment="Right" Width="100" Height="28" Margin="0,0,10,0"/>
                             </Grid>
                         </StatusBarItem>
                     </StatusBar>
                 </Grid>
             </Grid>
+
+            <!-- UPDATED: Sharelist Panel with circular buttons and increased width -->
+            <Border x:Name="SharelistPanel" 
+                    Grid.Column="2" 
+                    Width="400"
+                    Background="#252526"
+                    BorderThickness="1,0,0,0"
+                    BorderBrush="#3F3F46"
+                    Visibility="Collapsed">
+
+                <Grid>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto"/>
+                        <!-- Header -->
+                        <RowDefinition Height="Auto"/>
+                        <!-- Toolbar -->
+                        <RowDefinition Height="*"/>
+                        <!-- List -->
+                        <RowDefinition Height="Auto"/>
+                        <!-- Footer -->
+                    </Grid.RowDefinitions>
+
+                    <!-- Header -->
+                    <Border Grid.Row="0" 
+                            Background="#2D2D30" 
+                            BorderThickness="0,0,0,1" 
+                            BorderBrush="#3F3F46">
+                        <Grid Margin="15,12">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="Auto"/>
+                            </Grid.ColumnDefinitions>
+
+                            <StackPanel x:Name="SharelistTitlePanel" Grid.Column="0" Orientation="Horizontal">
+                                <TextBlock Text="Sharelist" 
+                                           Foreground="#00FF50" 
+                                           FontSize="16" 
+                                           FontWeight="SemiBold"
+                                           VerticalAlignment="Center"/>
+                                <Border Background="#00FF50" 
+                                        CornerRadius="10" 
+                                        Margin="10,0,0,0"
+                                        Padding="8,2"
+                                        VerticalAlignment="Center">
+                                    <TextBlock x:Name="SharelistCountText" 
+                                               Text="0" 
+                                               Foreground="#1E1E1E" 
+                                               FontWeight="Bold"
+                                               FontSize="12"/>
+                                </Border>
+
+                                <!-- New entries badge will be added here dynamically -->
+                            </StackPanel>
+
+                            <!-- Close button -->
+                            <Button Grid.Column="1" 
+                                    Click="CloseSharelist_Click"
+                                    Style="{StaticResource ActionButtonStyle}"
+                                    Width="24" Height="24"
+                                    Padding="0">
+                                <TextBlock Text="✕" FontSize="16"/>
+                            </Button>
+                        </Grid>
+                    </Border>
+
+                    <!-- Toolbar with circular buttons -->
+                    <Border Grid.Row="1" 
+                            Background="#333337">
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="*"/>
+                            </Grid.ColumnDefinitions>
+
+                            <!-- Export Button -->
+                            <StackPanel Grid.Column="0" HorizontalAlignment="Center">
+                                <Button Style="{StaticResource CircularSharelistButtonStyle}" 
+                                        Click="ExportSharelist_Click"
+                                        ToolTip="Export Sharelist">
+                                    <TextBlock Text="&#xE8DE;" 
+                                              FontFamily="Segoe MDL2 Assets" 
+                                              FontSize="20"/>
+                                </Button>
+                                <TextBlock Text="Export" 
+                                          Foreground="#CCCCCC" 
+                                          FontSize="10" 
+                                          HorizontalAlignment="Center"
+                                          Margin="0,0,0,5"/>
+                            </StackPanel>
+
+                            <!-- Import Button -->
+                            <StackPanel Grid.Column="1" HorizontalAlignment="Center">
+                                <Button Style="{StaticResource CircularSharelistButtonStyle}" 
+                                        Click="ImportSharelist_Click"
+                                        ToolTip="Import Sharelist">
+                                    <TextBlock Text="&#xE8DB;" 
+                                              FontFamily="Segoe MDL2 Assets" 
+                                              FontSize="20"/>
+                                </Button>
+                                <TextBlock Text="Import" 
+                                          Foreground="#CCCCCC" 
+                                          FontSize="10" 
+                                          HorizontalAlignment="Center"
+                                          Margin="0,0,0,5"/>
+                            </StackPanel>
+
+                            <!-- Clear Button -->
+                            <StackPanel Grid.Column="2" HorizontalAlignment="Center">
+                                <Button Style="{StaticResource CircularSharelistButtonStyle}" 
+                                        Click="ClearSharelist_Click"
+                                        ToolTip="Clear All">
+                                    <TextBlock Text="&#xE74D;" 
+                                              FontFamily="Segoe MDL2 Assets" 
+                                              FontSize="20"/>
+                                </Button>
+                                <TextBlock Text="Clear" 
+                                          Foreground="#CCCCCC" 
+                                          FontSize="10" 
+                                          HorizontalAlignment="Center"
+                                          Margin="0,0,0,5"/>
+                            </StackPanel>
+                        </Grid>
+                    </Border>
+
+                    <!-- Sharelist Items with visual indication of new entries -->
+                    <ScrollViewer Grid.Row="2" 
+                                  VerticalScrollBarVisibility="Auto"
+                                  Style="{StaticResource GreenScrollViewer}"
+                                  Background="#1E1E1E">
+                        <ItemsControl x:Name="SharelistItemsControl"
+                                      Margin="5">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate>
+                                    <Border Background="#2D2D30" 
+                                            CornerRadius="4" 
+                                            Margin="0,2"
+                                            Padding="10,8"
+                                            BorderThickness="{Binding IsNewAddition, Converter={StaticResource BoolToThicknessConverter}}"
+                                            BorderBrush="#00FF50">
+                                        <Grid>
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="*"/>
+                                                <ColumnDefinition Width="Auto"/>
+                                            </Grid.ColumnDefinitions>
+
+                                            <StackPanel Grid.Column="0">
+                                                <StackPanel Orientation="Horizontal" Margin="0,0,0,3">
+                                                    <TextBlock Text="ID: " 
+                                                               Foreground="#999999" 
+                                                               FontSize="11"/>
+                                                    <TextBlock Text="{Binding HashId}" 
+                                                               Foreground="#00FF50" 
+                                                               FontWeight="SemiBold"
+                                                               FontSize="11"/>
+                                                    <TextBlock Text=" | Hex: " 
+                                                               Foreground="#999999" 
+                                                               FontSize="11"
+                                                               Margin="8,0,0,0"/>
+                                                    <TextBlock Text="{Binding HexValue}" 
+                                                               Foreground="#00FF50" 
+                                                               FontFamily="Consolas"
+                                                               FontSize="11"/>
+
+                                                    <!-- Show NEW badge if it's a new addition -->
+                                                    <Border Visibility="{Binding IsNewAddition, Converter={StaticResource BoolToVisibilityConverter}}" 
+                                                            Background="#FF5050" 
+                                                            CornerRadius="2" 
+                                                            Margin="8,0,0,0" 
+                                                            Padding="4,0">
+                                                        <TextBlock Text="NEW" 
+                                                                   Foreground="White" 
+                                                                   FontSize="9" 
+                                                                   FontWeight="Bold"/>
+                                                    </Border>
+                                                </StackPanel>
+
+                                                <TextBox Text="{Binding Description, UpdateSourceTrigger=PropertyChanged}" 
+                                                         Background="Transparent"
+                                                         Foreground="White" 
+                                                         BorderThickness="0"
+                                                         TextWrapping="Wrap"
+                                                         FontSize="12"
+                                                         Padding="0"/>
+                                            </StackPanel>
+
+                                            <Button Grid.Column="1" 
+                                                    Click="RemoveFromSharelist_Click"
+                                                    Tag="{Binding}"
+                                                    Style="{StaticResource ActionButtonStyle}"
+                                                    Width="20" Height="20"
+                                                    Padding="0"
+                                                    Margin="5,0,0,0"
+                                                    ToolTip="Remove from sharelist">
+                                                <TextBlock Text="✕" FontSize="12"/>
+                                            </Button>
+                                        </Grid>
+                                    </Border>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                    </ScrollViewer>
+
+                    <!-- Footer info with update info -->
+                    <StackPanel Grid.Row="3" Margin="10,5">
+                        <TextBlock Text="Right-click strings to add to sharelist" 
+                                   Foreground="#999999" 
+                                   FontSize="11"
+                                   HorizontalAlignment="Center"/>
+
+                        <!-- Display version information if available -->
+                        <StackPanel x:Name="VersionInfoPanel" 
+                                   Orientation="Horizontal" 
+                                   HorizontalAlignment="Center" 
+                                   Margin="0,5,0,0" 
+                                   Visibility="Collapsed">
+                            <TextBlock Text="Version: " 
+                                      Foreground="#999999" 
+                                      FontSize="11"/>
+                            <TextBlock x:Name="VersionText" 
+                                      Text="1.0" 
+                                      Foreground="#00FF50" 
+                                      FontSize="11" 
+                                      FontWeight="SemiBold"/>
+                        </StackPanel>
+                    </StackPanel>
+                </Grid>
+            </Border>
         </Grid>
 
         <!-- CSV Drag and Drop Overlay (now inside the main Grid, not a direct child of Window) -->

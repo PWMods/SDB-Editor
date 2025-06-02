@@ -10,7 +10,7 @@
                        EdgeMode="Aliased"
                        ClearTypeHint="Enabled" />
 
-        <!-- Added text rendering improvements for Unicode -->
+        <!-- Text rendering improvements for Unicode -->
         <Style TargetType="{x:Type TextBlock}">
             <Setter Property="TextOptions.TextFormattingMode" Value="Ideal" />
             <Setter Property="TextOptions.TextRenderingMode" Value="ClearType" />
@@ -23,11 +23,72 @@
             <Setter Property="TextOptions.TextHintingMode" Value="Auto" />
         </Style>
 
-        <!-- Configure VirtualizingStackPanel defaults for better performance -->
+        <!-- VirtualizingStackPanel for better performance -->
         <Style TargetType="{x:Type VirtualizingStackPanel}">
             <Setter Property="IsVirtualizing" Value="True"/>
             <Setter Property="VirtualizationMode" Value="Recycling"/>
             <Setter Property="ScrollViewer.CanContentScroll" Value="True"/>
         </Style>
+
+        <!-- Transparent repeat buttons to hide the ScrollBar's arrow buttons -->
+        <Style x:Key="ScrollBarTransparentButton" TargetType="RepeatButton">
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="RepeatButton">
+                        <Border Background="Transparent"/>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <!-- Correct ScrollBar style -->
+        <Style x:Key="GreenScrollBarStyle" TargetType="{x:Type ScrollBar}">
+            <Setter Property="Width" Value="12"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="{x:Type ScrollBar}">
+                        <Grid Background="#2D2D30">
+                            <Track x:Name="PART_Track">
+                                <Track.DecreaseRepeatButton>
+                                    <RepeatButton Command="ScrollBar.PageUpCommand" Style="{StaticResource ScrollBarTransparentButton}" />
+                                </Track.DecreaseRepeatButton>
+
+                                <Track.Thumb>
+                                    <Thumb x:Name="PART_Thumb" Margin="2">
+                                        <Thumb.Template>
+                                            <ControlTemplate TargetType="Thumb">
+                                                <Border x:Name="ThumbBorder"
+                              Background="#2D2D30"
+                              CornerRadius="6"/>
+                                            </ControlTemplate>
+                                        </Thumb.Template>
+                                    </Thumb>
+                                </Track.Thumb>
+
+                                <Track.IncreaseRepeatButton>
+                                    <RepeatButton Command="ScrollBar.PageDownCommand" Style="{StaticResource ScrollBarTransparentButton}" />
+                                </Track.IncreaseRepeatButton>
+                            </Track>
+                        </Grid>
+
+                        <ControlTemplate.Triggers>
+                            <Trigger SourceName="PART_Thumb" Property="IsMouseOver" Value="True">
+                                <Setter TargetName="PART_Thumb" Property="Template">
+                                    <Setter.Value>
+                                        <ControlTemplate TargetType="Thumb">
+                                            <Border Background="#00FF50" CornerRadius="6"/>
+                                        </ControlTemplate>
+                                    </Setter.Value>
+                                </Setter>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <!-- Apply globally -->
+        <Style TargetType="{x:Type ScrollBar}" BasedOn="{StaticResource GreenScrollBarStyle}" />
     </Application.Resources>
 </Application>

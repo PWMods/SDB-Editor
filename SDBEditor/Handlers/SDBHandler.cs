@@ -278,7 +278,7 @@ namespace SDBEditor.Handlers
 
                     // Write string address table
                     List<byte[]> stringDataList = new List<byte[]>();
-                    foreach (var entry in _strings)
+                    foreach (var entry in _strings.OrderBy(e => e.HashId))
                     {
                         if (entry == null) continue; // Skip null entries
 
@@ -400,48 +400,112 @@ namespace SDBEditor.Handlers
 
             try
             {
-                // Game identifiers
-                Dictionary<string, List<string>> gameMarkers = new Dictionary<string, List<string>>
-                {
-                    { "WWE2K25", new List<string> { "WWE 2K25", "2K25", "WWE2K25" } },  // Added WWE 2K25 support
-                    { "WWE2K24", new List<string> { "WWE 2K24", "2K24", "WWE2K24" } },
-                    { "WWE2K23", new List<string> { "WWE 2K23", "2K23", "WWE2K23" } },
-                    { "WWE2K22", new List<string> { "WWE 2K22", "2K22", "WWE2K22" } },
-                    { "WWE2K20", new List<string> { "WWE 2K20", "2K20", "WWE2K20" } },
-                    { "WWE2K19", new List<string> { "WWE 2K19", "2K19", "WWE2K19" } }
-                };
+                Console.WriteLine($"\n[SDBHandler] Detecting game and language for: {filePath}");
 
-                // Language markers
-                Dictionary<string, List<string>> languageMap = new Dictionary<string, List<string>>
+                // STEP 1: Try filename-based language detection FIRST
+                if (!string.IsNullOrEmpty(filePath))
                 {
-                    { "ARA", new List<string> { "ال", "في", "من", "على" } },  // Arabic
-                    { "ENG", new List<string> { "the", "and", "match", "win" } },  // English
-                    { "FRA", new List<string> { "le", "la", "les", "des" } },  // French
-                    { "GER", new List<string> { "der", "die", "das", "und" } },  // German
-                    { "ITA", new List<string> { "il", "la", "gli", "nel" } },  // Italian
-                    { "SPA", new List<string> { "el", "la", "los", "las" } }   // Spanish
-                };
+                    string filename = Path.GetFileNameWithoutExtension(filePath);
+                    string upperFilename = filename?.ToUpper() ?? "";
 
-                // Ensure strings collection is initialized
-                if (_strings == null)
-                {
-                    _strings = new List<StringEntry>();
-                    return;
+                    Console.WriteLine($"[SDBHandler] Checking filename: '{upperFilename}'");
+
+                    // Direct language code detection from filename
+                    string[] supportedLanguages = { "ARA", "ENG", "FRA", "GER", "ITA", "SPA", "JPN", "KOR", "CHN", "RUS", "POR", "DUT" };
+
+                    // Check exact match
+                    if (supportedLanguages.Contains(upperFilename))
+                    {
+                        Language = upperFilename;
+                        Console.WriteLine($"[SDBHandler] ✓ Language detected from filename (exact): {Language}");
+                    }
+                    else
+                    {
+                        // Check if filename contains language code
+                        foreach (var lang in supportedLanguages)
+                        {
+                            if (upperFilename.Contains(lang))
+                            {
+                                Language = lang;
+                                Console.WriteLine($"[SDBHandler] ✓ Language detected from filename (contains): {Language}");
+                                break;
+                            }
+                        }
+                    }
                 }
 
-                // Game detection - check file path first
+                // STEP 2: Game detection
+                Dictionary<string, List<string>> gameMarkers = new Dictionary<string, List<string>>
+        {
+            { "WWE2K25", new List<string> { "WWE 2K25", "2K25", "WWE2K25" } },
+            { "WWE2K24", new List<string> { "WWE 2K24", "2K24", "WWE2K24" } },
+            { "WWE2K23", new List<string> { "WWE 2K23", "2K23", "WWE2K23" } },
+            { "WWE2K22", new List<string> { "WWE 2K22", "2K22", "WWE2K22" } },
+            { "WWE2K20", new List<string> { "WWE 2K20", "2K20", "WWE2K20" } },
+            { "WWE2K19", new List<string> { "WWE 2K19", "2K19", "WWE2K19" } }
+        };
+
+                // Check file path for game
                 string pathLower = filePath.ToLower();
                 foreach (var game in gameMarkers)
                 {
                     if (game.Value.Any(marker => pathLower.Contains(marker.ToLower())))
                     {
                         GameName = game.Key;
+                        Console.WriteLine($"[SDBHandler] Game detected from path: {GameName}");
                         break;
                     }
                 }
 
-                // If path didn't give a match, check string content
-                if (GameName == "Unknown Game")
+                // STEP 3: ONLY use content-based detection if filename detection failed
+                if (Language == "Unknown Language")
+                {
+                    Console.WriteLine("[SDBHandler] No language in filename, falling back to content detection...");
+
+                    // Language markers for content detection
+                    Dictionary<string, List<string>> languageMap = new Dictionary<string, List<string>>
+            {
+                { "ARA", new List<string> { "ال", "في", "من", "على" } },
+                { "ENG", new List<string> { "the", "and", "match", "win" } },
+                { "FRA", new List<string> { "le", "la", "les", "des" } },
+                { "GER", new List<string> { "der", "die", "das", "und" } },
+                { "ITA", new List<string> { "il", "la", "gli", "nel" } },
+                { "SPA", new List<string> { "el", "la", "los", "las" } }
+            };
+
+                    // Ensure strings collection is initialized
+                    if (_strings != null && _strings.Count > 0)
+                    {
+                        // Language detection from content
+                        Dictionary<string, int> languageScores = languageMap.ToDictionary(kv => kv.Key, kv => 0);
+
+                        foreach (var entry in _strings.Where(s => s != null).Take(100))
+                        {
+                            string text = (entry.Text ?? string.Empty).ToLower();
+                            foreach (var lang in languageMap)
+                            {
+                                if (lang.Value.Any(marker => text.Contains(marker)))
+                                {
+                                    languageScores[lang.Key]++;
+                                }
+                            }
+                        }
+
+                        // Set language if we have a clear winner
+                        if (languageScores.Values.Any())
+                        {
+                            int maxScore = languageScores.Values.Max();
+                            if (maxScore > 5)
+                            {
+                                Language = languageScores.First(kv => kv.Value == maxScore).Key;
+                                Console.WriteLine($"[SDBHandler] Language detected from content: {Language} (score: {maxScore})");
+                            }
+                        }
+                    }
+                }
+
+                // If game wasn't detected from path and we have strings, try content
+                if (GameName == "Unknown Game" && _strings != null && _strings.Count > 0)
                 {
                     string contentText = string.Join(" ", _strings.Where(s => s != null).Select(s => (s.Text ?? string.Empty).ToLower()));
                     foreach (var game in gameMarkers)
@@ -449,38 +513,17 @@ namespace SDBEditor.Handlers
                         if (game.Value.Any(marker => contentText.Contains(marker.ToLower())))
                         {
                             GameName = game.Key;
+                            Console.WriteLine($"[SDBHandler] Game detected from content: {GameName}");
                             break;
                         }
                     }
                 }
 
-                // Language detection
-                Dictionary<string, int> languageScores = languageMap.ToDictionary(kv => kv.Key, kv => 0);
-                foreach (var entry in _strings.Where(s => s != null).Take(100))
-                {
-                    string text = (entry.Text ?? string.Empty).ToLower();
-                    foreach (var lang in languageMap)
-                    {
-                        if (lang.Value.Any(marker => text.Contains(marker)))
-                        {
-                            languageScores[lang.Key]++;
-                        }
-                    }
-                }
-
-                // Set language if we have a clear winner
-                if (languageScores.Values.Any())
-                {
-                    int maxScore = languageScores.Values.Max();
-                    if (maxScore > 5)
-                    {
-                        Language = languageScores.First(kv => kv.Value == maxScore).Key;
-                    }
-                }
+                Console.WriteLine($"[SDBHandler] Final detection result: Game={GameName}, Language={Language}");
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"Error in game/language detection: {ex.Message}");
+                Console.WriteLine($"[SDBHandler] Error in game/language detection: {ex.Message}");
             }
         }
 

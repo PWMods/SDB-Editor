@@ -1,6 +1,7 @@
 ﻿using System;
 using System.ComponentModel;
 using System.Runtime.CompilerServices;
+using SDBEditor.Handlers; // ✅ Added to enable FunctionEntry mapping
 
 namespace SDBEditor.ViewModels
 {
@@ -36,8 +37,8 @@ namespace SDBEditor.ViewModels
                 {
                     _hashId = value;
                     OnPropertyChanged();
-                    // Update hex value as well
                     HexValue = value.ToString("X");
+                    OnPropertyChanged(nameof(FunctionEntry)); // Notify UI that label may change too
                 }
             }
         }
@@ -62,8 +63,6 @@ namespace SDBEditor.ViewModels
             {
                 if (_text != value)
                 {
-                    // No special encoding/decoding needed here
-                    // WPF handles the string display with the proper font and rendering settings
                     _text = value;
                     OnPropertyChanged();
                 }
@@ -71,13 +70,18 @@ namespace SDBEditor.ViewModels
         }
 
         /// <summary>
+        /// Human-friendly label from metadata, like "Nickname", "Full Name", etc.
+        /// </summary>
+        public string FunctionEntry => SdbFunctionEntryMapper.Lookup(HashId);
+
+
+        /// <summary>
         /// Force a UI refresh of this view model
         /// </summary>
         public void RefreshDisplay()
         {
-            // This method is used to force UI refresh of the view model
-            // Notification is triggered by changing a property
             OnPropertyChanged("Text");
+            OnPropertyChanged(nameof(FunctionEntry));
         }
 
         public StringEntryViewModel(SDBEditor.Models.StringEntry entry)
@@ -87,13 +91,10 @@ namespace SDBEditor.ViewModels
                 throw new ArgumentNullException(nameof(entry), "Cannot create view model from null entry");
             }
 
-            // Calculate index
-            _index = 0; // Will be set by the caller
-
-            // Set properties
+            _index = 0;
             _hashId = entry.HashId;
             _hexValue = entry.HashId.ToString("X");
-            _text = entry.Text ?? string.Empty; // Ensure text is never null
+            _text = entry.Text ?? string.Empty;
         }
 
         public event PropertyChangedEventHandler PropertyChanged;
